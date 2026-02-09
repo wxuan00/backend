@@ -32,5 +32,8 @@ public class User {
     private String secretKey; // For Google Authenticator 2FA
 
     @Column(name = "created_at")
-    private LocalDateTime createdAt = LocalDateTime.now();
+    private LocalDateTime createdAt;
+
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
 }

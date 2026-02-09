@@ -14,7 +14,7 @@ public class UserService {
 
     // Get all users
     public List<User> getAllUsers() {
-        return userRepository.findAll();
+        return userRepository.findByDeletedAtIsNull();
     }
 
     // Create a new user
@@ -31,6 +31,14 @@ public class UserService {
     }
 
     public void deleteUser(Long id) {
-        userRepository.deleteById(id);
+        // Soft delete
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        // Mark as deleted now
+        user.setDeletedAt(java.time.LocalDateTime.now());
+
+        // Save the update
+        userRepository.save(user);
     }
 }
