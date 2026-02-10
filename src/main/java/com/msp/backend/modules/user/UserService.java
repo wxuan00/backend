@@ -23,9 +23,12 @@ public class UserService {
             throw new RuntimeException("Email already exists!");
         }
 
-        user.setPassword(passwordEncoder.encode(user.getPassword()));
-        user.setCreatedAt(java.time.LocalDateTime.now());
+        // Basic validation
+        if (user.getRole() == null) user.setRole("USER");
+        if (user.getStatus() == null) user.setStatus("ACTIVE");
 
+        user.setPassword(passwordEncoder.encode(user.getPassword())); // Date is set by @PrePersist in entity
+        user.setCreatedAt(java.time.LocalDateTime.now());
         // In the next step (Auth), we will encrypt this password!
         return userRepository.save(user);
     }
@@ -34,6 +37,10 @@ public class UserService {
         // Soft delete
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("User not found"));
+
+        if ("admin@msp.com".equalsIgnoreCase(user.getEmail())) {
+            throw new RuntimeException("CRITICAL: You cannot delete the Super Admin!");
+        } //to be improved with roles
 
         // Mark as deleted now
         user.setDeletedAt(java.time.LocalDateTime.now());

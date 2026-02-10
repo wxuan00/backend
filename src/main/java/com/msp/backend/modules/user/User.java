@@ -23,10 +23,29 @@ public class User {
     private String displayName;
 
     @Column(nullable = false)
+    private String firstName;
+
+    @Column(nullable = false)
+    private String lastName;
+
+    @Column(nullable = false)
     private String role; // 'ADMIN' or 'MERCHANT'
 
     @Column(name = "is_mfa_enabled")
     private boolean isMfaEnabled = false;
+
+    @Column(nullable = false)
+    private String phoneNumber;
+
+    private String status;
+
+    @PrePersist
+    protected void onCreate() {
+        this.createdAt = LocalDateTime.now();
+        if (this.status == null) {
+            this.status = "ACTIVE"; // Default status
+        }
+    }
 
     @Column(name = "secret_key")
     private String secretKey; // For Google Authenticator 2FA
@@ -36,4 +55,7 @@ public class User {
 
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
+
+    @Column(name = "merchant_id")
+    private Long merchantId; // Null for Admins, Set for Merchants
 }
