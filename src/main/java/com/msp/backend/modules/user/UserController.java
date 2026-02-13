@@ -19,10 +19,24 @@ public class UserController {
         return userService.getAllUsers();
     }
 
+    // GET single user by ID
+    @GetMapping("/{id}")
+    public ResponseEntity<User> getUserById(@PathVariable Long id) {
+        User user = userService.getUserById(id);
+        user.setPassword(null);
+        return ResponseEntity.ok(user);
+    }
+
     // 1. ADD ENDPOINT
     @PostMapping
     public ResponseEntity<User> createUser(@RequestBody User user) {
         return ResponseEntity.ok(userService.createUser(user));
+    }
+
+    // UPDATE user
+    @PutMapping("/{id}")
+    public ResponseEntity<User> updateUser(@PathVariable Long id, @RequestBody User user) {
+        return ResponseEntity.ok(userService.updateUser(id, user));
     }
 
     // 2. DELETE ENDPOINT

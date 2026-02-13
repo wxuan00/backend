@@ -41,13 +41,71 @@ public class MerchantController {
         }
     }
 
+    @GetMapping("/{id}")
+    public ResponseEntity<Merchant> getMerchantById(@PathVariable Long id) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        String email = auth.getName();
+        User currentUser = userRepository.findByEmail(email).orElseThrow();
+
+        Merchant merchant = merchantService.getMerchantById(id);
+
+        // Non-admin can only see their own merchant
+        if (!"ADMIN".equals(currentUser.getRole())) {
+            if (currentUser.getMerchantId() == null || !currentUser.getMerchantId().equals(merchant.getId())) {
+                return ResponseEntity.status(403).build();
+            }
+        }
+        return ResponseEntity.ok(merchant);
+    }
+
     @PostMapping
     public ResponseEntity<Merchant> createMerchant(@RequestBody Merchant merchant) {
+        // Only admin can create merchants
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        String email = auth.getName();
+        User currentUser = userRepository.findByEmail(email).orElseThrow();
+        if (!"ADMIN".equals(currentUser.getRole())) {
+            return ResponseEntity.status(403).build();
+        }
         return ResponseEntity.ok(merchantService.createMerchant(merchant));
     }
 
     @GetMapping("/search")
     public List<Merchant> searchMerchants(@RequestParam String name) {
+        // Only admin can search all merchants
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        String email = auth.getName();
+        User currentUser = userRepository.findByEmail(email).orElseThrow();
+        if (!"ADMIN".equals(currentUser.getRole())) {
+            // Non-admin: return only their own merchant if it matches
+            if (currentUser.getMerchantId() == null) return List.of();
+            return merchantService.searchMerchants(name).stream()
+                    .filter(m -> m.getId().equals(currentUser.getMerchantId()))
+                    .toList();
+        }
         return merchantService.searchMerchants(name);
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<Merchant> updateMerchant(@PathVariable Long id, @RequestBody Merchant merchant) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        String email = auth.getName();
+        User currentUser = userRepository.findByEmail(email).orElseThrow();
+        if (!"ADMIN".equals(currentUser.getRole())) {
+            return ResponseEntity.status(403).build();
+        }
+        return ResponseEntity.ok(merchantService.updateMerchant(id, merchant));
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteMerchant(@PathVariable Long id) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        String email = auth.getName();
+        User currentUser = userRepository.findByEmail(email).orElseThrow();
+        if (!"ADMIN".equals(currentUser.getRole())) {
+            return ResponseEntity.status(403).build();
+        }
+        merchantService.deleteMerchant(id);
+        return ResponseEntity.noContent().build();
     }
 }

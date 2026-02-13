@@ -1,4 +1,4 @@
-package com.msp.backend.modules.transaction;
+package com.msp.backend.modules.settlement;
 
 import com.msp.backend.modules.user.User;
 import com.msp.backend.modules.user.UserRepository;
@@ -10,47 +10,46 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/transactions")
+@RequestMapping("/api/settlements")
 @RequiredArgsConstructor
 @CrossOrigin(origins = "*")
-public class TransactionController {
+public class SettlementController {
 
-    private final TransactionService transactionService;
+    private final SettlementService settlementService;
     private final UserRepository userRepository;
 
     @GetMapping
-    public List<Transaction> getAllTransactions() {
+    public List<Settlement> getAllSettlements() {
         User currentUser = getCurrentUser();
         if ("ADMIN".equals(currentUser.getRole())) {
-            return transactionService.getAllTransactions();
+            return settlementService.getAllSettlements();
         } else {
             if (currentUser.getMerchantId() == null) return List.of();
-            return transactionService.getTransactionsByMerchantId(currentUser.getMerchantId());
+            return settlementService.getSettlementsByMerchantId(currentUser.getMerchantId());
         }
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<Transaction> getTransactionById(@PathVariable Long id) {
-        Transaction txn = transactionService.getTransactionById(id);
+    public ResponseEntity<Settlement> getSettlementById(@PathVariable Long id) {
+        Settlement settlement = settlementService.getSettlementById(id);
         User currentUser = getCurrentUser();
 
-        // Non-admin can only see their own merchant's transactions
         if (!"ADMIN".equals(currentUser.getRole())) {
-            if (currentUser.getMerchantId() == null || !currentUser.getMerchantId().equals(txn.getMerchantId())) {
+            if (currentUser.getMerchantId() == null || !currentUser.getMerchantId().equals(settlement.getMerchantId())) {
                 return ResponseEntity.status(403).build();
             }
         }
-        return ResponseEntity.ok(txn);
+        return ResponseEntity.ok(settlement);
     }
 
     @GetMapping("/search")
-    public List<Transaction> searchTransactions(@RequestParam String keyword) {
+    public List<Settlement> searchSettlements(@RequestParam String keyword) {
         User currentUser = getCurrentUser();
         if ("ADMIN".equals(currentUser.getRole())) {
-            return transactionService.searchTransactions(keyword);
+            return settlementService.searchSettlements(keyword);
         } else {
             if (currentUser.getMerchantId() == null) return List.of();
-            return transactionService.searchTransactionsByMerchant(currentUser.getMerchantId(), keyword);
+            return settlementService.searchSettlementsByMerchant(currentUser.getMerchantId(), keyword);
         }
     }
 

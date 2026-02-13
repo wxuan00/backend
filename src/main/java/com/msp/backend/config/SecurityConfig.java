@@ -33,7 +33,22 @@ public class SecurityConfig {
                 }))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers("/api/auth/login").permitAll()
+                        .requestMatchers("/api/auth/me").authenticated()
+                        .requestMatchers("/api/auth/mfa/verify").authenticated()
+                        // Admin-only endpoints: user management, role management
+                        .requestMatchers("/api/users/**").hasRole("ADMIN")
+                        .requestMatchers("/api/roles/**").hasRole("ADMIN")
+                        // Profile endpoints: accessible by all authenticated users
+                        .requestMatchers("/api/profile/**").authenticated()
+                        // Merchant, Transaction, Settlement, Credit Advice endpoints (filtered by role in controller)
+                        .requestMatchers("/api/merchants/**").authenticated()
+                        .requestMatchers("/api/transactions/**").authenticated()
+                        .requestMatchers("/api/settlements/**").authenticated()
+                        .requestMatchers("/api/credit-advices/**").authenticated()
+                        // Dashboard & Reports: accessible by all authenticated users
+                        .requestMatchers("/api/dashboard/**").authenticated()
+                        .requestMatchers("/api/reports/**").authenticated()
                         .anyRequest().authenticated()
                 )
                 .authenticationProvider(authenticationProvider)

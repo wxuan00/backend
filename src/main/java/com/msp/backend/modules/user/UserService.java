@@ -17,6 +17,12 @@ public class UserService {
         return userRepository.findByDeletedAtIsNull();
     }
 
+    // Get single user by ID
+    public User getUserById(Long id) {
+        return userRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+    }
+
     // Create a new user
     public User createUser(User user) {
         if (userRepository.existsByEmail(user.getEmail())) {
@@ -38,14 +44,43 @@ public class UserService {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        if ("admin@msp.com".equalsIgnoreCase(user.getEmail())) {
-            throw new RuntimeException("CRITICAL: You cannot delete the Super Admin!");
-        } //to be improved with roles
+        // Protect admin users from being deleted
+        if ("ADMIN".equals(user.getRole())) {
+            // Count remaining admin users
+            long adminCount = userRepository.findByDeletedAtIsNull().stream()
+                    .filter(u -> "ADMIN".equals(u.getRole()))
+                    .count();
+            if (adminCount <= 1) {
+                throw new RuntimeException("CRITICAL: Cannot delete the last admin user!");
+            }
+        }
 
         // Mark as deleted now
         user.setDeletedAt(java.time.LocalDateTime.now());
 
         // Save the update
         userRepository.save(user);
+    }
+
+    // Update an existing user
+    public User updateUser(Long id, User updated) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        if (updated.getFirstName() != null) user.setFirstName(updated.getFirstName());
+        if (updated.getLastName() != null) user.setLastName(updated.getLastName());
+        if (updated.getDisplayName() != null) user.setDisplayName(updated.getDisplayName());
+        if (updated.getPhoneNumber() != null) user.setPhoneNumber(updated.getPhoneNumber());
+        if (updated.getRole() != null) user.setRole(updated.getRole());
+        if (updated.getStatus() != null) user.setStatus(updated.getStatus());
+        if (updated.getMerchantId() != null) user.setMerchantId(updated.getMerchantId());
+        // Only update password if provided
+        if (updated.getPassword() != null && !updated.getPassword().isBlank()) {
+            user.setPassword(passwordEncoder.encode(updated.getPassword()));
+        }
+
+        User saved = userRepository.save(user);
+        saved.setPassword(null); // Don't return password
+        return saved;
     }
 }
