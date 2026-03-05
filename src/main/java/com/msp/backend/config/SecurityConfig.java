@@ -27,13 +27,14 @@ public class SecurityConfig {
                     config.setAllowedOriginPatterns(java.util.List.of("*"));
                     config.setAllowedMethods(java.util.List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
                     config.setAllowedHeaders(java.util.List.of("*"));
-                    config.setExposedHeaders(java.util.List.of("Authorization"));
+                    config.setExposedHeaders(java.util.List.of("Authorization", "Content-Disposition"));
                     config.setAllowCredentials(true);
                     return config;
                 }))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/login").permitAll()
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/auth/me").authenticated()
                         .requestMatchers("/api/auth/mfa/verify").authenticated()
                         // Admin-only endpoints: user management, role management
@@ -44,10 +45,12 @@ public class SecurityConfig {
                         // Merchant, Transaction, Settlement, Credit Advice endpoints (filtered by role in controller)
                         .requestMatchers("/api/merchants/**").authenticated()
                         .requestMatchers("/api/transactions/**").authenticated()
+                        .requestMatchers("/api/refunds/**").authenticated()
                         .requestMatchers("/api/settlements/**").authenticated()
                         .requestMatchers("/api/credit-advices/**").authenticated()
-                        // Dashboard & Reports: accessible by all authenticated users
+                        // Dashboard, Analytics & Reports: accessible by all authenticated users
                         .requestMatchers("/api/dashboard/**").authenticated()
+                        .requestMatchers("/api/analytics/**").authenticated()
                         .requestMatchers("/api/reports/**").authenticated()
                         .anyRequest().authenticated()
                 )

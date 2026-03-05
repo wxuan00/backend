@@ -1,5 +1,6 @@
 package com.msp.backend.modules.settlement;
 
+import com.msp.backend.modules.merchant.MerchantRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import java.util.List;
@@ -9,30 +10,32 @@ import java.util.List;
 public class CreditAdviceService {
 
     private final CreditAdviceRepository creditAdviceRepository;
+    private final MerchantRepository merchantRepository;
 
     public List<CreditAdvice> getAllCreditAdvices() {
-        return creditAdviceRepository.findAllByOrderByCreatedAtDesc();
+        List<CreditAdvice> advices = creditAdviceRepository.findAllByOrderByPaymentDateDesc();
+        advices.forEach(this::populateMerchantName);
+        return advices;
     }
 
     public List<CreditAdvice> getCreditAdvicesByMerchantId(Long merchantId) {
-        return creditAdviceRepository.findByMerchantIdOrderByCreatedAtDesc(merchantId);
+        List<CreditAdvice> advices = creditAdviceRepository.findByMerchantIdOrderByPaymentDateDesc(merchantId);
+        advices.forEach(this::populateMerchantName);
+        return advices;
     }
 
     public CreditAdvice getCreditAdviceById(Long id) {
-        return creditAdviceRepository.findById(id)
+        CreditAdvice advice = creditAdviceRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Credit advice not found"));
+        populateMerchantName(advice);
+        return advice;
     }
 
-    public List<CreditAdvice> searchCreditAdvices(String keyword) {
-        return creditAdviceRepository.findByMerchantNameContainingIgnoreCaseOrAdviceRefContainingIgnoreCase(
-                keyword, keyword);
-    }
-
-    public List<CreditAdvice> searchCreditAdvicesByMerchant(Long merchantId, String keyword) {
-        return creditAdviceRepository.findByMerchantIdAndMerchantNameContainingIgnoreCase(merchantId, keyword);
-    }
-
-    public List<CreditAdvice> getCreditAdvicesBySettlement(Long settlementId) {
-        return creditAdviceRepository.findBySettlementId(settlementId);
+    private void populateMerchantName(CreditAdvice advice) {
+        if (advice.getMerchantId() != null) {
+            merchantRepository.findById(advice.getMerchantId()).ifPresent(
+                m -> advice.setMerchantName(m.getMerchantName())
+            );
+        }
     }
 }

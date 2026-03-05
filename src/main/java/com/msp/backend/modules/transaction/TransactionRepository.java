@@ -5,11 +5,9 @@ import java.util.List;
 
 public interface TransactionRepository extends JpaRepository<Transaction, Long> {
 
-    List<Transaction> findByMerchantIdOrderByCreatedAtDesc(Long merchantId);
+    List<Transaction> findByMerchantIdOrderByTxnDateDesc(Long merchantId);
 
-    List<Transaction> findAllByOrderByCreatedAtDesc();
+    List<Transaction> findAllByOrderByTxnDateDesc();
 
-    List<Transaction> findByMerchantNameContainingIgnoreCaseOrRrnContaining(String merchantName, String rrn);
-
-    List<Transaction> findByMerchantIdAndMerchantNameContainingIgnoreCase(Long merchantId, String merchantName);
+    List<Transaction> findBySettlementId(Long settlementId);
 }

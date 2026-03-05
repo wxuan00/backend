@@ -1,68 +1,78 @@
 package com.msp.backend.modules.user;
 
+import com.msp.backend.modules.role.Role;
+import com.msp.backend.modules.role.RoleRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 @Service
-@RequiredArgsConstructor // Lombok generates the constructor for dependency injection
+@RequiredArgsConstructor
 public class UserService {
 
     private final UserRepository userRepository;
+    private final UserRoleRepository userRoleRepository;
+    private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
 
-    // Get all users
     public List<User> getAllUsers() {
-        return userRepository.findByDeletedAtIsNull();
+        List<User> users = userRepository.findByDeletedAtIsNull();
+        users.forEach(this::populateRole);
+        return users;
     }
 
-    // Get single user by ID
     public User getUserById(Long id) {
-        return userRepository.findById(id)
+        User user = userRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("User not found"));
+        populateRole(user);
+        return user;
     }
 
-    // Create a new user
+    @Transactional
     public User createUser(User user) {
         if (userRepository.existsByEmail(user.getEmail())) {
             throw new RuntimeException("Email already exists!");
         }
 
-        // Basic validation
-        if (user.getRole() == null) user.setRole("USER");
+        String roleName = user.getRole();
+        if (roleName == null) roleName = "MERCHANT";
         if (user.getStatus() == null) user.setStatus("ACTIVE");
 
-        user.setPassword(passwordEncoder.encode(user.getPassword())); // Date is set by @PrePersist in entity
+        user.setPassword(passwordEncoder.encode(user.getPassword()));
         user.setCreatedAt(java.time.LocalDateTime.now());
-        // In the next step (Auth), we will encrypt this password!
-        return userRepository.save(user);
+        user.setRole(null);
+        User saved = userRepository.save(user);
+
+        assignRole(saved.getUserId(), roleName, "SYSTEM");
+        saved.setRole(roleName);
+        return saved;
     }
 
+    @Transactional
     public void deleteUser(Long id) {
-        // Soft delete
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("User not found"));
+        populateRole(user);
 
-        // Protect admin users from being deleted
         if ("ADMIN".equals(user.getRole())) {
-            // Count remaining admin users
             long adminCount = userRepository.findByDeletedAtIsNull().stream()
-                    .filter(u -> "ADMIN".equals(u.getRole()))
+                    .filter(u -> {
+                        populateRole(u);
+                        return "ADMIN".equals(u.getRole());
+                    })
                     .count();
             if (adminCount <= 1) {
                 throw new RuntimeException("CRITICAL: Cannot delete the last admin user!");
             }
         }
 
-        // Mark as deleted now
         user.setDeletedAt(java.time.LocalDateTime.now());
-
-        // Save the update
         userRepository.save(user);
     }
 
-    // Update an existing user
+    @Transactional
     public User updateUser(Long id, User updated) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("User not found"));
@@ -70,17 +80,38 @@ public class UserService {
         if (updated.getFirstName() != null) user.setFirstName(updated.getFirstName());
         if (updated.getLastName() != null) user.setLastName(updated.getLastName());
         if (updated.getDisplayName() != null) user.setDisplayName(updated.getDisplayName());
-        if (updated.getPhoneNumber() != null) user.setPhoneNumber(updated.getPhoneNumber());
-        if (updated.getRole() != null) user.setRole(updated.getRole());
+        if (updated.getContactNumber() != null) user.setContactNumber(updated.getContactNumber());
         if (updated.getStatus() != null) user.setStatus(updated.getStatus());
-        if (updated.getMerchantId() != null) user.setMerchantId(updated.getMerchantId());
-        // Only update password if provided
         if (updated.getPassword() != null && !updated.getPassword().isBlank()) {
             user.setPassword(passwordEncoder.encode(updated.getPassword()));
         }
 
+        if (updated.getRole() != null) {
+            userRoleRepository.deleteByUserId(user.getUserId());
+            assignRole(user.getUserId(), updated.getRole(), "SYSTEM");
+        }
+
         User saved = userRepository.save(user);
-        saved.setPassword(null); // Don't return password
+        saved.setPassword(null);
+        populateRole(saved);
         return saved;
+    }
+
+    public void populateRole(User user) {
+        List<UserRole> roles = userRoleRepository.findByUserId(user.getUserId());
+        if (!roles.isEmpty()) {
+            Long roleId = roles.get(0).getRoleId();
+            roleRepository.findById(roleId).ifPresent(role -> user.setRole(role.getRoleName()));
+        }
+    }
+
+    private void assignRole(Long userId, String roleName, String generatedBy) {
+        Role role = roleRepository.findByRoleName(roleName)
+                .orElseThrow(() -> new RuntimeException("Role not found: " + roleName));
+        UserRole userRole = new UserRole();
+        userRole.setUserId(userId);
+        userRole.setRoleId(role.getRoleId());
+        userRole.setGeneratedBy(generatedBy);
+        userRoleRepository.save(userRole);
     }
 }

@@ -1,7 +1,10 @@
 package com.msp.backend.modules.transaction;
 
+import com.msp.backend.modules.merchant.Merchant;
+import com.msp.backend.modules.merchant.MerchantRepository;
 import com.msp.backend.modules.user.User;
 import com.msp.backend.modules.user.UserRepository;
+import com.msp.backend.modules.user.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -12,11 +15,12 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/transactions")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class TransactionController {
 
     private final TransactionService transactionService;
     private final UserRepository userRepository;
+    private final UserService userService;
+    private final MerchantRepository merchantRepository;
 
     @GetMapping
     public List<Transaction> getAllTransactions() {
@@ -24,8 +28,9 @@ public class TransactionController {
         if ("ADMIN".equals(currentUser.getRole())) {
             return transactionService.getAllTransactions();
         } else {
-            if (currentUser.getMerchantId() == null) return List.of();
-            return transactionService.getTransactionsByMerchantId(currentUser.getMerchantId());
+            Long merchantId = getMyMerchantId(currentUser);
+            if (merchantId == null) return List.of();
+            return transactionService.getTransactionsByMerchantId(merchantId);
         }
     }
 
@@ -34,30 +39,26 @@ public class TransactionController {
         Transaction txn = transactionService.getTransactionById(id);
         User currentUser = getCurrentUser();
 
-        // Non-admin can only see their own merchant's transactions
         if (!"ADMIN".equals(currentUser.getRole())) {
-            if (currentUser.getMerchantId() == null || !currentUser.getMerchantId().equals(txn.getMerchantId())) {
+            Long merchantId = getMyMerchantId(currentUser);
+            if (merchantId == null || !merchantId.equals(txn.getMerchantId())) {
                 return ResponseEntity.status(403).build();
             }
         }
         return ResponseEntity.ok(txn);
     }
 
-    @GetMapping("/search")
-    public List<Transaction> searchTransactions(@RequestParam String keyword) {
-        User currentUser = getCurrentUser();
-        if ("ADMIN".equals(currentUser.getRole())) {
-            return transactionService.searchTransactions(keyword);
-        } else {
-            if (currentUser.getMerchantId() == null) return List.of();
-            return transactionService.searchTransactionsByMerchant(currentUser.getMerchantId(), keyword);
-        }
-    }
-
     private User getCurrentUser() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         String email = auth.getName();
-        return userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+        User user = userRepository.findByEmail(email).orElseThrow();
+        userService.populateRole(user);
+        return user;
+    }
+
+    private Long getMyMerchantId(User user) {
+        return merchantRepository.findByUserId(user.getUserId())
+                .map(Merchant::getMerchantId)
+                .orElse(null);
     }
 }

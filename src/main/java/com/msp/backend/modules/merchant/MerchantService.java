@@ -27,12 +27,15 @@ public class MerchantService {
         Merchant merchant = merchantRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Merchant not found"));
 
-        if (updated.getBusinessName() != null) merchant.setBusinessName(updated.getBusinessName());
-        if (updated.getBusinessRegistrationNumber() != null) merchant.setBusinessRegistrationNumber(updated.getBusinessRegistrationNumber());
-        if (updated.getEmail() != null) merchant.setEmail(updated.getEmail());
-        if (updated.getPhoneNumber() != null) merchant.setPhoneNumber(updated.getPhoneNumber());
-        if (updated.getAddress() != null) merchant.setAddress(updated.getAddress());
+        if (updated.getMerchantName() != null) merchant.setMerchantName(updated.getMerchantName());
+        if (updated.getContact() != null) merchant.setContact(updated.getContact());
+        if (updated.getAddressLine1() != null) merchant.setAddressLine1(updated.getAddressLine1());
+        if (updated.getAddressLine2() != null) merchant.setAddressLine2(updated.getAddressLine2());
+        if (updated.getPostcode() != null) merchant.setPostcode(updated.getPostcode());
+        if (updated.getCity() != null) merchant.setCity(updated.getCity());
+        if (updated.getCountry() != null) merchant.setCountry(updated.getCountry());
         if (updated.getStatus() != null) merchant.setStatus(updated.getStatus());
+        if (updated.getUserId() != null) merchant.setUserId(updated.getUserId());
 
         return merchantRepository.save(merchant);
     }
@@ -44,6 +47,6 @@ public class MerchantService {
     }
 
     public List<Merchant> searchMerchants(String keyword) {
-        return merchantRepository.findByBusinessNameContainingIgnoreCase(keyword);
+        return merchantRepository.findByMerchantNameContainingIgnoreCase(keyword);
     }
 }

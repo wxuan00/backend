@@ -10,10 +10,14 @@ public class Role {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    @Column(name = "role_id")
+    private Long roleId;
 
-    @Column(nullable = false, unique = true)
-    private String name; // e.g., ADMIN, MERCHANT
+    @Column(name = "role_name", nullable = false, unique = true)
+    private String roleName; // e.g., ADMIN, MERCHANT
 
     private String description;
+
+    @Column(name = "role_type")
+    private String roleType; // e.g., SYSTEM, CUSTOM
 }

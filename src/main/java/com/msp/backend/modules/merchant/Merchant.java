@@ -1,8 +1,8 @@
 package com.msp.backend.modules.merchant;
 
 import jakarta.persistence.*;
+import jakarta.validation.constraints.*;
 import lombok.Data;
-import java.time.LocalDateTime;
 
 @Data
 @Entity
@@ -11,28 +11,35 @@ public class Merchant {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    @Column(name = "merchant_id")
+    private Long merchantId;
 
-    @Column(nullable = false)
-    private String businessName;
+    @Column(name = "user_id")
+    private Long userId; // FK to users table
 
-    @Column(nullable = false, unique = true)
-    private String businessRegistrationNumber; // e.g., UEN or Tax ID
+    @Column(name = "merchant_name", nullable = false)
+    @NotBlank(message = "Merchant name is required")
+    @Size(min = 2, max = 200, message = "Merchant name must be between 2 and 200 characters")
+    private String merchantName;
 
-    @Column(nullable = false, unique = true)
-    private String email;
+    private String contact;
 
-    private String phoneNumber;
+    @Column(name = "address_line1")
+    private String addressLine1;
 
-    private String address;
+    @Column(name = "address_line2")
+    private String addressLine2;
+
+    private String postcode;
+
+    private String city;
+
+    private String country;
 
     private String status; // ACTIVE, SUSPENDED, PENDING
 
-    private LocalDateTime joinedAt;
-
     @PrePersist
     protected void onCreate() {
-        this.joinedAt = LocalDateTime.now();
         if (this.status == null) {
             this.status = "PENDING";
         }

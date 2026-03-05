@@ -5,12 +5,11 @@ import java.util.List;
 
 public interface SettlementRepository extends JpaRepository<Settlement, Long> {
 
-    List<Settlement> findByMerchantIdOrderByCreatedAtDesc(Long merchantId);
+    List<Settlement> findAllByOrderBySettlementDateDesc();
 
-    List<Settlement> findAllByOrderByCreatedAtDesc();
+    List<Settlement> findByCreditAdviceId(Long creditAdviceId);
 
-    List<Settlement> findByMerchantNameContainingIgnoreCaseOrSettlementRefContainingIgnoreCase(
-            String merchantName, String settlementRef);
+    List<Settlement> findByCreditAdviceIdInOrderBySettlementDateDesc(List<Long> creditAdviceIds);
 
-    List<Settlement> findByMerchantIdAndMerchantNameContainingIgnoreCase(Long merchantId, String merchantName);
+    List<Settlement> findBySettlementNoContainingIgnoreCase(String settlementNo);
 }

@@ -1,61 +1,71 @@
 package com.msp.backend.modules.user;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
+import jakarta.validation.constraints.*;
 import lombok.Data;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "users") // Maps to SQL table 'users'
-@Data // Lombok: Auto-generates Getters, Setters, ToString
+@Table(name = "users")
+@Data
 public class User {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    @Column(name = "user_id")
+    private Long userId;
 
     @Column(nullable = false, unique = true)
+    @NotBlank(message = "Email is required")
+    @Email(message = "Invalid email format")
     private String email;
 
     @Column(nullable = false)
-    private String password; // Will be hashed (e.g., BCrypt)
+    private String password; // BCrypt hashed (not in ERD but required for auth)
 
     @Column(name = "display_name")
     private String displayName;
 
-    @Column(nullable = false)
+    @Column(name = "first_name", nullable = false)
+    @NotBlank(message = "First name is required")
+    @Size(min = 1, max = 100, message = "First name must be between 1 and 100 characters")
     private String firstName;
 
-    @Column(nullable = false)
+    @Column(name = "last_name", nullable = false)
+    @NotBlank(message = "Last name is required")
+    @Size(min = 1, max = 100, message = "Last name must be between 1 and 100 characters")
     private String lastName;
 
-    @Column(nullable = false)
-    private String role; // 'ADMIN' or 'MERCHANT'
+    @Column(name = "contact_number")
+    private String contactNumber;
 
-    @Column(name = "is_mfa_enabled")
-    private boolean isMfaEnabled = false;
-
-    @Column(nullable = false)
-    private String phoneNumber;
+    @Column(name = "created_at")
+    private LocalDateTime createdAt;
 
     private String status;
+
+    // --- Auth fields (not in ERD but required for functionality) ---
+
+    @Column(name = "is_mfa_enabled")
+    @JsonProperty("mfaEnabled")
+    private boolean mfaEnabled = false;
+
+    @Column(name = "secret_key")
+    private String secretKey; // For Google Authenticator 2FA
+
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
+
+    // Transient field: populated from UserRoles junction table
+    @Transient
+    private String role;
 
     @PrePersist
     protected void onCreate() {
         this.createdAt = LocalDateTime.now();
         if (this.status == null) {
-            this.status = "ACTIVE"; // Default status
+            this.status = "ACTIVE";
         }
     }
-
-    @Column(name = "secret_key")
-    private String secretKey; // For Google Authenticator 2FA
-
-    @Column(name = "created_at")
-    private LocalDateTime createdAt;
-
-    @Column(name = "deleted_at")
-    private LocalDateTime deletedAt;
-
-    @Column(name = "merchant_id")
-    private Long merchantId; // Null for Admins, Set for Merchants
 }

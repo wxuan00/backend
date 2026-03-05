@@ -1,4 +1,4 @@
-package com.msp.backend.modules.settlement;
+package com.msp.backend.modules.transaction;
 
 import com.msp.backend.modules.merchant.Merchant;
 import com.msp.backend.modules.merchant.MerchantRepository;
@@ -13,39 +13,58 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/credit-advices")
+@RequestMapping("/api/refunds")
 @RequiredArgsConstructor
-public class CreditAdviceController {
+public class RefundController {
 
-    private final CreditAdviceService creditAdviceService;
+    private final RefundService refundService;
     private final UserRepository userRepository;
     private final UserService userService;
     private final MerchantRepository merchantRepository;
 
     @GetMapping
-    public List<CreditAdvice> getAllCreditAdvices() {
+    public List<Refund> getAllRefunds() {
         User currentUser = getCurrentUser();
         if ("ADMIN".equals(currentUser.getRole())) {
-            return creditAdviceService.getAllCreditAdvices();
+            return refundService.getAllRefunds();
         } else {
             Long merchantId = getMyMerchantId(currentUser);
             if (merchantId == null) return List.of();
-            return creditAdviceService.getCreditAdvicesByMerchantId(merchantId);
+            return refundService.getRefundsByMerchantId(merchantId);
         }
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<CreditAdvice> getCreditAdviceById(@PathVariable Long id) {
-        CreditAdvice advice = creditAdviceService.getCreditAdviceById(id);
+    public ResponseEntity<Refund> getRefundById(@PathVariable Long id) {
+        Refund refund = refundService.getRefundById(id);
         User currentUser = getCurrentUser();
 
         if (!"ADMIN".equals(currentUser.getRole())) {
             Long merchantId = getMyMerchantId(currentUser);
-            if (merchantId == null || !merchantId.equals(advice.getMerchantId())) {
+            if (merchantId == null || !merchantId.equals(refund.getMerchantId())) {
                 return ResponseEntity.status(403).build();
             }
         }
-        return ResponseEntity.ok(advice);
+        return ResponseEntity.ok(refund);
+    }
+
+    @GetMapping("/search")
+    public List<Refund> searchRefunds(@RequestParam String keyword) {
+        User currentUser = getCurrentUser();
+        List<Refund> all;
+        if ("ADMIN".equals(currentUser.getRole())) {
+            all = refundService.getAllRefunds();
+        } else {
+            Long merchantId = getMyMerchantId(currentUser);
+            if (merchantId == null) return List.of();
+            all = refundService.getRefundsByMerchantId(merchantId);
+        }
+        String kw = keyword.toLowerCase();
+        return all.stream().filter(r ->
+            (r.getMerchantName() != null && r.getMerchantName().toLowerCase().contains(kw)) ||
+            (r.getRefundRefNo() != null && r.getRefundRefNo().toLowerCase().contains(kw)) ||
+            (r.getCardNo() != null && r.getCardNo().toLowerCase().contains(kw))
+        ).toList();
     }
 
     private User getCurrentUser() {

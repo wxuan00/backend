@@ -12,46 +12,55 @@ public class Transaction {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    @Column(name = "transaction_id")
+    private Long transactionId;
 
     @Column(name = "merchant_id", nullable = false)
     private Long merchantId;
 
-    @Column(name = "merchant_name")
-    private String merchantName;
+    @Column(name = "settlement_id")
+    private Long settlementId; // FK to settlements
 
-    @Column(nullable = false)
-    private String type; // SALE, REFUND, VOID
-
-    @Column(nullable = false, precision = 12, scale = 2)
-    private BigDecimal amount;
-
-    @Column(nullable = false)
-    private String currency; // MYR, SGD, USD
+    @Column(name = "payment_channel")
+    private String paymentChannel; // e.g., POS, ONLINE, MOBILE
 
     @Column(nullable = false)
     private String status; // APPROVED, PENDING, DECLINED
 
-    @Column(name = "card_last4")
-    private String cardLast4;
+    @Column(nullable = false, precision = 12, scale = 2)
+    private BigDecimal amount;
 
-    @Column(name = "card_brand")
-    private String cardBrand; // Visa, Mastercard
+    @Column(name = "txn_date")
+    private LocalDateTime txnDate;
 
-    @Column(name = "auth_code")
-    private String authCode;
+    @Column(name = "ref_no")
+    private String refNo; // Reference number
 
-    private String rrn; // Retrieval Reference Number
+    @Column(name = "card_no")
+    private String cardNo; // Masked card number
 
-    @Column(name = "created_at")
-    private LocalDateTime createdAt;
+    @Column(nullable = false)
+    private String currency;
 
-    @Column(name = "settled_at")
-    private LocalDateTime settledAt;
+    @Column(name = "posted_date")
+    private LocalDateTime postedDate;
+
+    @Column(name = "txn_description")
+    private String txnDescription;
+
+    @Column(name = "discount_amount", precision = 12, scale = 2)
+    private BigDecimal discountAmount;
+
+    @Column(name = "nett_amount", precision = 12, scale = 2)
+    private BigDecimal nettAmount;
+
+    // Transient field for display - populated from Merchant
+    @Transient
+    private String merchantName;
 
     @PrePersist
     protected void onCreate() {
-        this.createdAt = LocalDateTime.now();
+        if (this.txnDate == null) this.txnDate = LocalDateTime.now();
         if (this.status == null) this.status = "PENDING";
         if (this.currency == null) this.currency = "MYR";
     }

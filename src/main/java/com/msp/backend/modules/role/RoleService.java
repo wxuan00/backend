@@ -20,7 +20,7 @@ public class RoleService {
     }
 
     public Role createRole(Role role) {
-        if (roleRepository.findByName(role.getName()).isPresent()) {
+        if (roleRepository.findByRoleName(role.getRoleName()).isPresent()) {
             throw new RuntimeException("Role name already exists");
         }
         return roleRepository.save(role);
@@ -28,16 +28,16 @@ public class RoleService {
 
     public Role updateRole(Long id, Role updated) {
         Role role = getRoleById(id);
-        role.setName(updated.getName());
+        role.setRoleName(updated.getRoleName());
         role.setDescription(updated.getDescription());
+        role.setRoleType(updated.getRoleType());
         return roleRepository.save(role);
     }
 
     public void deleteRole(Long id) {
         Role role = getRoleById(id);
-        // Prevent deletion of core roles
-        if ("ADMIN".equals(role.getName()) || "MERCHANT".equals(role.getName())) {
-            throw new RuntimeException("Cannot delete system role: " + role.getName());
+        if ("ADMIN".equals(role.getRoleName()) || "MERCHANT".equals(role.getRoleName())) {
+            throw new RuntimeException("Cannot delete system role: " + role.getRoleName());
         }
         roleRepository.deleteById(id);
     }

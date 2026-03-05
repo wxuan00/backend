@@ -12,47 +12,34 @@ public class CreditAdvice {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    @Column(name = "credit_advice_id")
+    private Long creditAdviceId;
 
     @Column(name = "merchant_id", nullable = false)
-    private Long merchantId;
+    private Long merchantId; // FK to merchants
 
-    @Column(name = "merchant_name")
-    private String merchantName;
+    @Column(name = "account_no")
+    private String accountNo;
 
-    @Column(name = "advice_ref", unique = true)
-    private String adviceRef; // Unique credit advice reference
+    @Column(name = "payment_date")
+    private LocalDateTime paymentDate;
 
-    @Column(name = "settlement_id")
-    private Long settlementId; // Links to a settlement
+    @Column(nullable = false)
+    private String currency;
 
     @Column(nullable = false, precision = 14, scale = 2)
     private BigDecimal amount;
 
-    @Column(nullable = false)
-    private String currency; // MYR, SGD, USD
+    @Column(name = "account_id")
+    private String accountId;
 
-    @Column(nullable = false)
-    private String status; // PENDING, ISSUED, ACKNOWLEDGED
-
-    @Column(name = "bank_account")
-    private String bankAccount; // Masked bank account for payout
-
-    @Column(name = "bank_name")
-    private String bankName;
-
-    private String remarks;
-
-    @Column(name = "issued_at")
-    private LocalDateTime issuedAt;
-
-    @Column(name = "created_at")
-    private LocalDateTime createdAt;
+    // Transient field for display
+    @Transient
+    private String merchantName;
 
     @PrePersist
     protected void onCreate() {
-        this.createdAt = LocalDateTime.now();
-        if (this.status == null) this.status = "PENDING";
+        if (this.paymentDate == null) this.paymentDate = LocalDateTime.now();
         if (this.currency == null) this.currency = "MYR";
     }
 }
