@@ -22,12 +22,24 @@ public class AuthService {
         User user = userRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
+        if (user.getDeletedAt() != null) {
+            throw new RuntimeException("Account not found");
+        }
+
+        if (!"ACTIVE".equalsIgnoreCase(user.getStatus())) {
+            throw new RuntimeException("Account is not active");
+        }
+
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
             throw new RuntimeException("Invalid password");
         }
 
         // Populate role from UserRoles junction table
         userService.populateRole(user);
+
+        if (user.getRole() == null || user.getRole().isBlank()) {
+            throw new RuntimeException("User has no role assigned");
+        }
 
         String jwtToken = jwtService.generateToken(user.getEmail(), user.getRole());
 

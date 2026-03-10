@@ -4,6 +4,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/roles")
@@ -11,6 +13,8 @@ import java.util.List;
 public class RoleController {
 
     private final RoleService roleService;
+    private final RolePermissionRepository rolePermissionRepository;
+    private final PermissionRepository permissionRepository;
 
     @GetMapping
     public List<Role> getAllRoles() {
@@ -20,6 +24,38 @@ public class RoleController {
     @GetMapping("/{id}")
     public Role getRoleById(@PathVariable Long id) {
         return roleService.getRoleById(id);
+    }
+
+    @GetMapping("/{id}/permissions")
+    public List<Permission> getRolePermissions(@PathVariable Long id) {
+        List<RolePermission> rps = rolePermissionRepository.findByRoleId(id);
+        List<Long> permIds = rps.stream().map(RolePermission::getPermissionId).collect(Collectors.toList());
+        if (permIds.isEmpty()) return List.of();
+        return permissionRepository.findAllById(permIds);
+    }
+
+    @GetMapping("/with-permissions")
+    public List<Map<String, Object>> getAllRolesWithPermissions() {
+        List<Role> roles = roleService.getAllRoles();
+        List<Permission> allPerms = permissionRepository.findAll();
+        List<RolePermission> allRPs = rolePermissionRepository.findAll();
+
+        return roles.stream().map(role -> {
+            List<Long> permIds = allRPs.stream()
+                .filter(rp -> rp.getRoleId().equals(role.getRoleId()))
+                .map(RolePermission::getPermissionId)
+                .collect(Collectors.toList());
+            List<Permission> rolePerms = allPerms.stream()
+                .filter(p -> permIds.contains(p.getPermissionId()))
+                .collect(Collectors.toList());
+            return Map.<String, Object>of(
+                "roleId", role.getRoleId(),
+                "roleName", role.getRoleName(),
+                "roleType", role.getRoleType() != null ? role.getRoleType() : "",
+                "description", role.getDescription() != null ? role.getDescription() : "",
+                "permissions", rolePerms
+            );
+        }).collect(Collectors.toList());
     }
 
     @PostMapping

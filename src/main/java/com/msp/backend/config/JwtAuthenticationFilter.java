@@ -56,6 +56,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             if (userEmail != null && SecurityContextHolder.getContext().getAuthentication() == null) {
                 // Extract role from JWT and set as authority
                 String role = jwtService.extractRole(jwt);
+                if (role == null || role.isBlank()) {
+                    filterChain.doFilter(request, response);
+                    return;
+                }
                 List<SimpleGrantedAuthority> authorities = Collections.singletonList(
                         new SimpleGrantedAuthority("ROLE_" + role)
                 );
