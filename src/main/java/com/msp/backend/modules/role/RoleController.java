@@ -26,12 +26,29 @@ public class RoleController {
         return roleService.getRoleById(id);
     }
 
+    @GetMapping("/permissions/all")
+    public List<Permission> getAllPermissions() {
+        return permissionRepository.findAll();
+    }
+
     @GetMapping("/{id}/permissions")
     public List<Permission> getRolePermissions(@PathVariable Long id) {
         List<RolePermission> rps = rolePermissionRepository.findByRoleId(id);
         List<Long> permIds = rps.stream().map(RolePermission::getPermissionId).collect(Collectors.toList());
         if (permIds.isEmpty()) return List.of();
         return permissionRepository.findAllById(permIds);
+    }
+
+    @PutMapping("/{id}/permissions")
+    public ResponseEntity<Void> updateRolePermissions(@PathVariable Long id, @RequestBody List<Long> permissionIds) {
+        rolePermissionRepository.deleteByRoleId(id);
+        for (Long permId : permissionIds) {
+            RolePermission rp = new RolePermission();
+            rp.setRoleId(id);
+            rp.setPermissionId(permId);
+            rolePermissionRepository.save(rp);
+        }
+        return ResponseEntity.ok().build();
     }
 
     @GetMapping("/with-permissions")
