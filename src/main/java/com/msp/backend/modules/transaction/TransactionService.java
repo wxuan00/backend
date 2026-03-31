@@ -8,6 +8,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -31,8 +32,9 @@ public class TransactionService {
         return txns;
     }
 
+    @Transactional(readOnly = true)
     public Transaction getTransactionById(Long id) {
-        return transactionRepository.findById(id)
+        return transactionRepository.findByIdWithMerchant(id)
                 .orElseThrow(() -> new RuntimeException("Transaction not found"));
     }
 
@@ -50,30 +52,39 @@ public class TransactionService {
             String sortBy,
             String sortDir
     ) {
-        // Merchant name sort goes through the join path
-        Sort sort;
-        if ("merchantName".equals(sortBy)) {
-            sort = sortDir.equalsIgnoreCase("asc")
-                    ? Sort.by("merchant.merchantName").ascending()
-                    : Sort.by("merchant.merchantName").descending();
-        } else {
-            sort = sortDir.equalsIgnoreCase("asc")
-                    ? Sort.by(sortBy).ascending()
-                    : Sort.by(sortBy).descending();
-        }
+        // When sorting by merchantName, use query.orderBy inside the Specification
+        // because Sort.by("merchant.merchantName") in Pageable conflicts with the JOIN
+        boolean sortByMerchant = "merchantName".equals(sortBy);
+        Sort sort = sortByMerchant
+                ? Sort.unsorted()
+                : (sortDir.equalsIgnoreCase("asc") ? Sort.by(sortBy).ascending() : Sort.by(sortBy).descending());
         Pageable pageable = PageRequest.of(page, size, sort);
 
         Specification<Transaction> spec = (root, query, cb) -> {
-            // Always join merchant so sorting by name works
-            var merchantJoin = root.join("merchant", jakarta.persistence.criteria.JoinType.LEFT);
-            if (query != null) query.distinct(true);
             List<Predicate> predicates = new ArrayList<>();
+
+            // Skip JOIN on count query to avoid duplicate rows in pagination count
+            boolean isCountQuery = query != null && Long.class.equals(query.getResultType());
+            jakarta.persistence.criteria.Join<Object, Object> merchantJoin = null;
+
+            if (!isCountQuery) {
+                merchantJoin = root.join("merchant", jakarta.persistence.criteria.JoinType.LEFT);
+                if (sortByMerchant) {
+                    query.orderBy(sortDir.equalsIgnoreCase("asc")
+                            ? cb.asc(merchantJoin.get("merchantName"))
+                            : cb.desc(merchantJoin.get("merchantName")));
+                } else {
+                    query.distinct(true);
+                }
+            }
 
             if (restrictToMerchantId != null) {
                 predicates.add(cb.equal(root.get("merchantId"), restrictToMerchantId));
             }
             if (merchantName != null && !merchantName.isBlank()) {
-                predicates.add(cb.like(cb.lower(merchantJoin.get("merchantName")), "%" + merchantName.toLowerCase().trim() + "%"));
+                // For count query, use a subquery-safe approach with a fresh join
+                var mj = isCountQuery ? root.join("merchant", jakarta.persistence.criteria.JoinType.LEFT) : merchantJoin;
+                predicates.add(cb.like(cb.lower(mj.get("merchantName")), "%" + merchantName.toLowerCase().trim() + "%"));
             }
             if (txnId != null && !txnId.isBlank()) {
                 predicates.add(cb.like(cb.toString(root.get("transactionId")), "%" + txnId.trim() + "%"));

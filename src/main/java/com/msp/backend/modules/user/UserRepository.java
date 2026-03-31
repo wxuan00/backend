@@ -6,11 +6,10 @@ import java.util.Optional;
 
 public interface UserRepository extends JpaRepository<User, Long> {
 
-    // 1. For Login (Finds user by email)
     Optional<User> findByEmail(String email);
-
-    // 2. For Dashboard (Only finds users who have NOT been soft-deleted)
+    Optional<User> findByDisplayNameIgnoreCase(String displayName);
     List<User> findByDeletedAtIsNull();
-
+    List<User> findByDeletedAtIsNullAndStatus(String status);
+    List<User> findByLastLoginAtBeforeAndDeletedAtIsNullAndStatus(java.time.LocalDateTime cutoff, String status);
     boolean existsByEmail(String email);
 }

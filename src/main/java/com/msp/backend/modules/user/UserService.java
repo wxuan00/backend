@@ -5,8 +5,10 @@ import com.msp.backend.modules.role.RoleRepository;
 import com.msp.backend.util.AuditHelper;
 import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import java.time.LocalDateTime;
 import java.util.List;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
@@ -47,6 +49,7 @@ public class UserService {
         user.setCreatedAt(java.time.LocalDateTime.now());
         user.setCreatedBy(AuditHelper.currentUser());
         user.setLastModifiedBy(AuditHelper.currentUser());
+        user.setMustChangePassword(true); // force password change on first login
         user.setRole(null);
         User saved = userRepository.save(user);
 
@@ -136,7 +139,32 @@ public class UserService {
                 .orElseThrow(() -> new RuntimeException("User not found"));
         user.setPassword(passwordEncoder.encode(newPassword));
         user.setLastModifiedBy(AuditHelper.currentUser());
-        user.setLastModifiedAt(java.time.LocalDateTime.now());
+        user.setLastModifiedAt(LocalDateTime.now());
         userRepository.save(user);
+    }
+
+    /**
+     * Runs daily at 02:00 AM. Auto-inactivates users who have never logged in AND
+     * whose account was created more than 30 days ago, OR users whose last login
+     * was more than 30 days ago.
+     */
+    @Scheduled(cron = "0 0 2 * * *")
+    @Transactional
+    public void autoInactivateInactiveUsers() {
+        LocalDateTime cutoff = LocalDateTime.now().minusDays(30);
+        List<User> candidates = userRepository.findByDeletedAtIsNullAndStatus("ACTIVE");
+        for (User user : candidates) {
+            boolean neverLoggedIn = user.getLastLoginAt() == null
+                    && user.getCreatedAt() != null
+                    && user.getCreatedAt().isBefore(cutoff);
+            boolean inactiveTooLong = user.getLastLoginAt() != null
+                    && user.getLastLoginAt().isBefore(cutoff);
+            if (neverLoggedIn || inactiveTooLong) {
+                user.setStatus("INACTIVE");
+                user.setLastModifiedBy("SYSTEM");
+                user.setLastModifiedAt(LocalDateTime.now());
+                userRepository.save(user);
+            }
+        }
     }
 }

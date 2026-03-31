@@ -8,6 +8,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -29,8 +30,9 @@ public class CreditAdviceService {
         return creditAdviceRepository.findByMerchantIdOrderByPaymentDateDesc(merchantId);
     }
 
+    @Transactional(readOnly = true)
     public CreditAdvice getCreditAdviceById(Long id) {
-        return creditAdviceRepository.findById(id)
+        return creditAdviceRepository.findByIdWithMerchant(id)
                 .orElseThrow(() -> new RuntimeException("Credit advice not found"));
     }
 
@@ -45,28 +47,35 @@ public class CreditAdviceService {
             String sortBy,
             String sortDir
     ) {
-        Sort sort;
-        if ("merchantName".equals(sortBy)) {
-            sort = sortDir.equalsIgnoreCase("asc")
-                    ? Sort.by("merchant.merchantName").ascending()
-                    : Sort.by("merchant.merchantName").descending();
-        } else {
-            sort = sortDir.equalsIgnoreCase("asc")
-                    ? Sort.by(sortBy).ascending()
-                    : Sort.by(sortBy).descending();
-        }
+        boolean sortByMerchant = "merchantName".equals(sortBy);
+        Sort sort = sortByMerchant
+                ? Sort.unsorted()
+                : (sortDir.equalsIgnoreCase("asc") ? Sort.by(sortBy).ascending() : Sort.by(sortBy).descending());
         Pageable pageable = PageRequest.of(page, size, sort);
 
         Specification<CreditAdvice> spec = (root, query, cb) -> {
-            var merchantJoin = root.join("merchant", jakarta.persistence.criteria.JoinType.LEFT);
-            if (query != null) query.distinct(true);
             List<Predicate> predicates = new ArrayList<>();
+
+            boolean isCountQuery = query != null && Long.class.equals(query.getResultType());
+            jakarta.persistence.criteria.Join<Object, Object> merchantJoin = null;
+
+            if (!isCountQuery) {
+                merchantJoin = root.join("merchant", jakarta.persistence.criteria.JoinType.LEFT);
+                if (sortByMerchant) {
+                    query.orderBy(sortDir.equalsIgnoreCase("asc")
+                            ? cb.asc(merchantJoin.get("merchantName"))
+                            : cb.desc(merchantJoin.get("merchantName")));
+                } else {
+                    query.distinct(true);
+                }
+            }
 
             if (restrictToMerchantId != null) {
                 predicates.add(cb.equal(root.get("merchantId"), restrictToMerchantId));
             }
             if (merchantName != null && !merchantName.isBlank()) {
-                predicates.add(cb.like(cb.lower(merchantJoin.get("merchantName")), "%" + merchantName.toLowerCase().trim() + "%"));
+                var mj = isCountQuery ? root.join("merchant", jakarta.persistence.criteria.JoinType.LEFT) : merchantJoin;
+                predicates.add(cb.like(cb.lower(mj.get("merchantName")), "%" + merchantName.toLowerCase().trim() + "%"));
             }
             if (accountNo != null && !accountNo.isBlank()) {
                 predicates.add(cb.like(cb.lower(root.get("accountNo")), "%" + accountNo.toLowerCase().trim() + "%"));

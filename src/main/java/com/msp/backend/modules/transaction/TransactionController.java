@@ -12,14 +12,13 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
-
 @RestController
 @RequestMapping("/api/transactions")
 @RequiredArgsConstructor
 public class TransactionController {
 
     private final TransactionService transactionService;
+    private final TransactionRepository transactionRepository;
     private final UserRepository userRepository;
     private final UserService userService;
     private final MerchantRepository merchantRepository;
@@ -63,6 +62,11 @@ public class TransactionController {
             }
         }
         return ResponseEntity.ok(txn);
+    }
+
+    @GetMapping("/by-settlement/{settlementId}")
+    public ResponseEntity<?> getTransactionsBySettlement(@PathVariable Long settlementId) {
+        return ResponseEntity.ok(transactionRepository.findBySettlementId(settlementId));
     }
 
     private User getCurrentUser() {

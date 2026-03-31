@@ -91,9 +91,9 @@ public class DataSeeder implements CommandLineRunner {
         seedUserRoles(users, roles, merchants);
         linkMerchantsToUsers(merchants, users);
         List<Transaction> transactions = seedTransactions(merchants);
-        seedRefunds(transactions, merchants);
         List<CreditAdvice> creditAdvices = seedCreditAdvices(merchants);
-        seedSettlements(creditAdvices);
+        seedSettlements(creditAdvices, transactions);
+        seedRefunds(transactions, merchants);
         seedAnalytics(merchants, transactions);
 
         log.info("=== Database Seeding Complete ===");
@@ -234,6 +234,7 @@ public class DataSeeder implements CommandLineRunner {
         admin.setContactNumber("+60123456000");
         admin.setStatus("ACTIVE");
         admin.setMfaEnabled(false);
+        admin.setMustChangePassword(Boolean.FALSE);
         users.add(userRepository.save(admin));
 
         // Another admin
@@ -246,6 +247,7 @@ public class DataSeeder implements CommandLineRunner {
         admin2.setContactNumber("+60123456001");
         admin2.setStatus("ACTIVE");
         admin2.setMfaEnabled(false);
+        admin2.setMustChangePassword(Boolean.FALSE);
         users.add(userRepository.save(admin2));
 
         // Merchant users
@@ -272,6 +274,7 @@ public class DataSeeder implements CommandLineRunner {
             u.setContactNumber("+6012345" + String.format("%04d", i + 10));
             u.setStatus("ACTIVE");
             u.setMfaEnabled(false);
+            u.setMustChangePassword(Boolean.FALSE);
             users.add(userRepository.save(u));
         }
 
@@ -434,31 +437,74 @@ public class DataSeeder implements CommandLineRunner {
         return allAdvices;
     }
 
-    private void seedSettlements(List<CreditAdvice> creditAdvices) {
+    private void seedSettlements(List<CreditAdvice> creditAdvices, List<Transaction> allTransactions) {
         log.info("Seeding settlements...");
         int settlementCount = 0;
-        String[] types = {"NORMAL", "NORMAL", "ADJUSTMENT", "CHARGEBACK"};
+        String[] types = {"NORMAL", "NORMAL", "NORMAL", "ADJUSTMENT", "CHARGEBACK"};
+
+        // Build a mutable list of unassigned APPROVED transactions per merchant
+        java.util.Map<Long, java.util.List<Transaction>> approvedByMerchant = new java.util.HashMap<>();
+        for (Transaction t : allTransactions) {
+            if ("APPROVED".equals(t.getStatus())) {
+                approvedByMerchant.computeIfAbsent(t.getMerchantId(), k -> new ArrayList<>()).add(t);
+            }
+        }
 
         for (CreditAdvice ca : creditAdvices) {
             int numSettlements = 1 + random.nextInt(2);
+            java.util.List<Transaction> merchantTxns = approvedByMerchant.getOrDefault(ca.getMerchantId(), new ArrayList<>());
+
+            // Decide how many transactions to assign across all settlements for this CA
+            int txnsPerSettlement = 2 + random.nextInt(4); // 2–5 txns per settlement
+            int totalTxnsForCa = txnsPerSettlement * numSettlements;
+
+            // Take up to totalTxnsForCa from the front of the merchant's pool
+            int available = Math.min(totalTxnsForCa, merchantTxns.size());
+            java.util.List<Transaction> caTransactions = new ArrayList<>(merchantTxns.subList(0, available));
+            merchantTxns.subList(0, available).clear(); // remove them from the pool
+
+            // Split caTransactions into numSettlements groups
+            int caIdx = 0;
             for (int i = 0; i < numSettlements; i++) {
                 Settlement s = new Settlement();
                 s.setCreditAdviceId(ca.getCreditAdviceId());
                 s.setSettlementNo("STL" + String.format("%08d", random.nextInt(100000000)));
                 s.setSettlementType(types[random.nextInt(types.length)]);
                 s.setCurrency("MYR");
-
-                BigDecimal settlementAmount = ca.getAmount()
-                        .divide(BigDecimal.valueOf(numSettlements), 2, RoundingMode.HALF_UP);
-                s.setSettlementAmount(settlementAmount);
-
-                BigDecimal paymentAmount = settlementAmount.multiply(BigDecimal.valueOf(0.975)).setScale(2, RoundingMode.HALF_UP);
-                s.setPaymentAmount(paymentAmount);
-
                 s.setSettlementDate(ca.getPaymentDate().plusDays(1 + random.nextInt(3)));
 
-                settlementRepository.save(s);
+                // Collect txns for this settlement
+                java.util.List<Transaction> settlementTxns = new ArrayList<>();
+                int targetCount = (available > 0) ? (caTransactions.size() - caIdx > 0 ? txnsPerSettlement : 0) : 0;
+                for (int j = 0; j < txnsPerSettlement && caIdx < caTransactions.size(); j++, caIdx++) {
+                    settlementTxns.add(caTransactions.get(caIdx));
+                }
+
+                if (!settlementTxns.isEmpty()) {
+                    // Settlement amount = sum of nett amounts of assigned transactions
+                    BigDecimal settlementAmount = settlementTxns.stream()
+                            .map(t -> t.getNettAmount() != null ? t.getNettAmount() : t.getAmount())
+                            .reduce(BigDecimal.ZERO, BigDecimal::add)
+                            .setScale(2, RoundingMode.HALF_UP);
+                    s.setSettlementAmount(settlementAmount);
+                    BigDecimal paymentAmount = settlementAmount.multiply(BigDecimal.valueOf(0.975)).setScale(2, RoundingMode.HALF_UP);
+                    s.setPaymentAmount(paymentAmount);
+                } else {
+                    // Fallback: split CA amount evenly (no transactions available)
+                    BigDecimal settlementAmount = ca.getAmount()
+                            .divide(BigDecimal.valueOf(numSettlements), 2, RoundingMode.HALF_UP);
+                    s.setSettlementAmount(settlementAmount);
+                    s.setPaymentAmount(settlementAmount.multiply(BigDecimal.valueOf(0.975)).setScale(2, RoundingMode.HALF_UP));
+                }
+
+                Settlement saved = settlementRepository.save(s);
                 settlementCount++;
+
+                // Link transactions back to this settlement
+                for (Transaction t : settlementTxns) {
+                    t.setSettlementId(saved.getSettlementId());
+                    transactionRepository.save(t);
+                }
             }
         }
 

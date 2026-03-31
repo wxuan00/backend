@@ -51,12 +51,32 @@ public class SettlementController {
         User currentUser = getCurrentUser();
 
         if (!"ADMIN".equals(currentUser.getRole())) {
-            Long merchantId = getMyMerchantId(currentUser);
-            if (merchantId == null || !merchantId.equals(settlement.getMerchantId())) {
+            Long myMerchantId = getMyMerchantId(currentUser);
+            Long settlementMerchantId = settlement.getMerchantIdResolved();
+            if (myMerchantId == null || !myMerchantId.equals(settlementMerchantId)) {
                 return ResponseEntity.status(403).build();
             }
         }
         return ResponseEntity.ok(settlement);
+    }
+
+    @GetMapping("/by-credit-advice/{creditAdviceId}")
+    public ResponseEntity<?> getSettlementsByCreditAdvice(@PathVariable Long creditAdviceId) {
+        User currentUser = getCurrentUser();
+        if (!"ADMIN".equals(currentUser.getRole())) {
+            Long myMerchantId = getMyMerchantId(currentUser);
+            if (myMerchantId == null) return ResponseEntity.status(403).build();
+            // Verify this credit advice belongs to the merchant
+            var settlements = settlementService.getSettlementsByCreditAdviceId(creditAdviceId);
+            if (!settlements.isEmpty()) {
+                Long settlementMerchantId = settlements.get(0).getMerchantIdResolved();
+                if (!myMerchantId.equals(settlementMerchantId)) {
+                    return ResponseEntity.status(403).build();
+                }
+            }
+            return ResponseEntity.ok(settlements);
+        }
+        return ResponseEntity.ok(settlementService.getSettlementsByCreditAdviceId(creditAdviceId));
     }
 
     private User getCurrentUser() {

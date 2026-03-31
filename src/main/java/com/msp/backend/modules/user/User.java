@@ -52,6 +52,9 @@ public class User {
     @Column(name = "last_modified_by")
     private String lastModifiedBy;
 
+    @Column(name = "last_login_at")
+    private LocalDateTime lastLoginAt;
+
     private String status;
 
     // --- Auth fields (not in ERD but required for functionality) ---
@@ -62,6 +65,9 @@ public class User {
 
     @Column(name = "secret_key")
     private String secretKey; // For Google Authenticator 2FA
+
+    @Column(name = "must_change_password", columnDefinition = "boolean default true")
+    private Boolean mustChangePassword = true; // true for new users; cleared after first password change
 
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;

@@ -62,6 +62,7 @@ public class ProfileController {
         }
 
         user.setPassword(passwordEncoder.encode(newPassword));
+        user.setMustChangePassword(Boolean.FALSE); // clear first-login flag
         userRepository.save(user);
 
         return ResponseEntity.ok(Map.of("message", "Password changed successfully"));

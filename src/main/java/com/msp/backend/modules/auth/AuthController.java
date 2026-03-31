@@ -30,24 +30,31 @@ public class AuthController {
 
     @PostMapping("/login")
     public ResponseEntity<Map<String, Object>> login(@RequestBody LoginRequest request) {
-        AuthResponse authResponse = authService.login(request);
-        
-        // Check if user has MFA enabled
-        User user = userRepository.findByEmail(request.getEmail())
+        AuthResponse authResponse;
+        try {
+            authResponse = authService.login(request);
+        } catch (RuntimeException ex) {
+            Map<String, Object> err = new HashMap<>();
+            err.put("message", ex.getMessage());
+            return ResponseEntity.badRequest().body(err);
+        }
+
+        // Resolve user by identifier (email or display name)
+        String identifier = request.getIdentifier();
+        User user = userRepository.findByEmail(identifier)
+                .or(() -> userRepository.findByDisplayNameIgnoreCase(identifier))
                 .orElseThrow(() -> new RuntimeException("User not found"));
-        
+
         Map<String, Object> response = new HashMap<>();
         response.put("token", authResponse.getToken());
         response.put("role", authResponse.getRole());
-        
+
         if (user.isMfaEnabled() && user.getSecretKey() != null && !user.getSecretKey().isBlank()) {
-            // MFA is required
             response.put("mfaRequired", true);
         } else {
-            // No MFA required
             response.put("mfaRequired", false);
         }
-        
+
         return ResponseEntity.ok(response);
     }
 
@@ -73,7 +80,19 @@ public class AuthController {
         Merchant merchant = merchantRepository.findByUserId(user.getUserId()).orElse(null);
         userInfo.put("merchantId", merchant != null ? merchant.getMerchantId() : null);
         userInfo.put("mfaEnabled", user.isMfaEnabled());
+        userInfo.put("mustChangePassword", Boolean.TRUE.equals(user.getMustChangePassword()));
         return userInfo;
+    }
+
+    @PatchMapping("/clear-must-change-password")
+    public ResponseEntity<?> clearMustChangePassword() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        String email = auth.getName();
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        user.setMustChangePassword(false);
+        userRepository.save(user);
+        return ResponseEntity.ok(Map.of("message", "Password change requirement cleared"));
     }
 
     // MFA verification endpoint
