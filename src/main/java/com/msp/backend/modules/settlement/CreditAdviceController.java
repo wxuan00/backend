@@ -6,11 +6,11 @@ import com.msp.backend.modules.user.User;
 import com.msp.backend.modules.user.UserRepository;
 import com.msp.backend.modules.user.UserService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
-import java.util.List;
 
 @RestController
 @RequestMapping("/api/credit-advices")
@@ -23,15 +23,25 @@ public class CreditAdviceController {
     private final MerchantRepository merchantRepository;
 
     @GetMapping
-    public List<CreditAdvice> getAllCreditAdvices() {
+    public Page<CreditAdvice> getAllCreditAdvices(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "paymentDate") String sortBy,
+            @RequestParam(defaultValue = "desc") String sortDir,
+            @RequestParam(required = false) String merchantName,
+            @RequestParam(required = false) String accountNo,
+            @RequestParam(required = false) String dateFrom,
+            @RequestParam(required = false) String dateTo
+    ) {
         User currentUser = getCurrentUser();
-        if ("ADMIN".equals(currentUser.getRole())) {
-            return creditAdviceService.getAllCreditAdvices();
-        } else {
-            Long merchantId = getMyMerchantId(currentUser);
-            if (merchantId == null) return List.of();
-            return creditAdviceService.getCreditAdvicesByMerchantId(merchantId);
+        Long restrictToMerchantId = null;
+        if (!"ADMIN".equals(currentUser.getRole())) {
+            restrictToMerchantId = getMyMerchantId(currentUser);
+            if (restrictToMerchantId == null) return Page.empty();
         }
+        return creditAdviceService.getCreditAdvicesPage(
+                restrictToMerchantId, merchantName, accountNo, dateFrom, dateTo,
+                page, size, sortBy, sortDir);
     }
 
     @GetMapping("/{id}")

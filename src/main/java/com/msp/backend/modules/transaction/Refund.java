@@ -1,5 +1,6 @@
 package com.msp.backend.modules.transaction;
 
+import com.msp.backend.modules.merchant.Merchant;
 import jakarta.persistence.*;
 import lombok.Data;
 import java.math.BigDecimal;
@@ -16,13 +17,17 @@ public class Refund {
     private Long refundId;
 
     @Column(name = "transaction_id")
-    private Long transactionId; // FK to transactions
+    private Long transactionId;
 
     @Column(name = "merchant_id", nullable = false)
-    private Long merchantId; // FK to merchants
+    private Long merchantId;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "merchant_id", insertable = false, updatable = false)
+    private Merchant merchant;
 
     @Column(name = "card_no")
-    private String cardNo; // Masked card number
+    private String cardNo;
 
     @Column(name = "submission_date")
     private LocalDateTime submissionDate;
@@ -37,7 +42,7 @@ public class Refund {
     private BigDecimal amount;
 
     @Column(name = "refund_type")
-    private String refundType; // FULL, PARTIAL
+    private String refundType;
 
     @Column(name = "refund_ref_no")
     private String refundRefNo;
@@ -48,11 +53,12 @@ public class Refund {
     @Column(name = "transaction_date")
     private LocalDateTime transactionDate;
 
-    private String status; // PENDING, APPROVED, REJECTED
+    private String status;
 
-    // Transient field for display
-    @Transient
-    private String merchantName;
+    @com.fasterxml.jackson.annotation.JsonProperty("merchantName")
+    public String getMerchantName() {
+        return merchant != null ? merchant.getMerchantName() : null;
+    }
 
     @PrePersist
     protected void onCreate() {

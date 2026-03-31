@@ -6,11 +6,13 @@ import com.msp.backend.modules.user.User;
 import com.msp.backend.modules.user.UserRepository;
 import com.msp.backend.modules.user.UserService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
-import java.util.List;
+
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/refunds")
@@ -23,15 +25,28 @@ public class RefundController {
     private final MerchantRepository merchantRepository;
 
     @GetMapping
-    public List<Refund> getAllRefunds() {
+    public Page<Refund> getAllRefunds(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "submissionDate") String sortBy,
+            @RequestParam(defaultValue = "desc") String sortDir,
+            @RequestParam(required = false) String merchantName,
+            @RequestParam(required = false) String refundRefNo,
+            @RequestParam(required = false) String cardNo,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String refundType,
+            @RequestParam(required = false) String dateFrom,
+            @RequestParam(required = false) String dateTo
+    ) {
         User currentUser = getCurrentUser();
-        if ("ADMIN".equals(currentUser.getRole())) {
-            return refundService.getAllRefunds();
-        } else {
-            Long merchantId = getMyMerchantId(currentUser);
-            if (merchantId == null) return List.of();
-            return refundService.getRefundsByMerchantId(merchantId);
+        Long restrictToMerchantId = null;
+        if (!"ADMIN".equals(currentUser.getRole())) {
+            restrictToMerchantId = getMyMerchantId(currentUser);
+            if (restrictToMerchantId == null) return Page.empty();
         }
+        return refundService.getRefundsPage(
+                restrictToMerchantId, merchantName, refundRefNo, cardNo, status, refundType, dateFrom, dateTo,
+                page, size, sortBy, sortDir);
     }
 
     @GetMapping("/{id}")
@@ -48,23 +63,32 @@ public class RefundController {
         return ResponseEntity.ok(refund);
     }
 
-    @GetMapping("/search")
-    public List<Refund> searchRefunds(@RequestParam String keyword) {
-        User currentUser = getCurrentUser();
-        List<Refund> all;
-        if ("ADMIN".equals(currentUser.getRole())) {
-            all = refundService.getAllRefunds();
-        } else {
-            Long merchantId = getMyMerchantId(currentUser);
-            if (merchantId == null) return List.of();
-            all = refundService.getRefundsByMerchantId(merchantId);
+    @PostMapping
+    public ResponseEntity<?> requestRefund(@RequestBody Refund refund) {
+        try {
+            Refund saved = refundService.requestRefund(refund);
+            return ResponseEntity.ok(saved);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
-        String kw = keyword.toLowerCase();
-        return all.stream().filter(r ->
-            (r.getMerchantName() != null && r.getMerchantName().toLowerCase().contains(kw)) ||
-            (r.getRefundRefNo() != null && r.getRefundRefNo().toLowerCase().contains(kw)) ||
-            (r.getCardNo() != null && r.getCardNo().toLowerCase().contains(kw))
-        ).toList();
+    }
+
+    @PutMapping("/{id}/cancel")
+    public ResponseEntity<?> cancelRefund(@PathVariable Long id) {
+        try {
+            User currentUser = getCurrentUser();
+            Refund refund = refundService.getRefundById(id);
+            if (!"ADMIN".equals(currentUser.getRole())) {
+                Long merchantId = getMyMerchantId(currentUser);
+                if (merchantId == null || !merchantId.equals(refund.getMerchantId())) {
+                    return ResponseEntity.status(403).build();
+                }
+            }
+            Refund updated = refundService.cancelRefund(id);
+            return ResponseEntity.ok(updated);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
     }
 
     private User getCurrentUser() {
@@ -81,3 +105,4 @@ public class RefundController {
                 .orElse(null);
     }
 }
+

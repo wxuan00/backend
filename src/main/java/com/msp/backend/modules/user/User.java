@@ -43,6 +43,15 @@ public class User {
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 
+    @Column(name = "created_by")
+    private String createdBy;
+
+    @Column(name = "last_modified_at")
+    private LocalDateTime lastModifiedAt;
+
+    @Column(name = "last_modified_by")
+    private String lastModifiedBy;
+
     private String status;
 
     // --- Auth fields (not in ERD but required for functionality) ---
@@ -64,8 +73,14 @@ public class User {
     @PrePersist
     protected void onCreate() {
         this.createdAt = LocalDateTime.now();
+        this.lastModifiedAt = LocalDateTime.now();
         if (this.status == null) {
             this.status = "ACTIVE";
         }
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        this.lastModifiedAt = LocalDateTime.now();
     }
 }

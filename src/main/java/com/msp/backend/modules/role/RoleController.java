@@ -1,7 +1,9 @@
 package com.msp.backend.modules.role;
 
+import com.msp.backend.util.AuditHelper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.Map;
@@ -15,6 +17,7 @@ public class RoleController {
     private final RoleService roleService;
     private final RolePermissionRepository rolePermissionRepository;
     private final PermissionRepository permissionRepository;
+    private final jakarta.persistence.EntityManager entityManager;
 
     @GetMapping
     public List<Role> getAllRoles() {
@@ -39,13 +42,20 @@ public class RoleController {
         return permissionRepository.findAllById(permIds);
     }
 
+    @Transactional
     @PutMapping("/{id}/permissions")
     public ResponseEntity<Void> updateRolePermissions(@PathVariable Long id, @RequestBody List<Long> permissionIds) {
+        String actor = AuditHelper.currentUser();
         rolePermissionRepository.deleteByRoleId(id);
+        rolePermissionRepository.flush();
+        entityManager.clear();
         for (Long permId : permissionIds) {
             RolePermission rp = new RolePermission();
             rp.setRoleId(id);
             rp.setPermissionId(permId);
+            rp.setGeneratedBy(actor);
+            rp.setLastModifiedBy(actor);
+            rp.setLastModifiedAt(java.time.LocalDateTime.now());
             rolePermissionRepository.save(rp);
         }
         return ResponseEntity.ok().build();
@@ -65,13 +75,17 @@ public class RoleController {
             List<Permission> rolePerms = allPerms.stream()
                 .filter(p -> permIds.contains(p.getPermissionId()))
                 .collect(Collectors.toList());
-            return Map.<String, Object>of(
-                "roleId", role.getRoleId(),
-                "roleName", role.getRoleName(),
-                "roleType", role.getRoleType() != null ? role.getRoleType() : "",
-                "description", role.getDescription() != null ? role.getDescription() : "",
-                "permissions", rolePerms
-            );
+            java.util.Map<String, Object> map = new java.util.HashMap<>();
+            map.put("roleId", role.getRoleId());
+            map.put("roleName", role.getRoleName());
+            map.put("roleType", role.getRoleType() != null ? role.getRoleType() : "");
+            map.put("description", role.getDescription() != null ? role.getDescription() : "");
+            map.put("createdAt", role.getCreatedAt() != null ? role.getCreatedAt().toString() : "");
+            map.put("createdBy", role.getCreatedBy() != null ? role.getCreatedBy() : "");
+            map.put("lastModifiedAt", role.getLastModifiedAt() != null ? role.getLastModifiedAt().toString() : "");
+            map.put("lastModifiedBy", role.getLastModifiedBy() != null ? role.getLastModifiedBy() : "");
+            map.put("permissions", rolePerms);
+            return map;
         }).collect(Collectors.toList());
     }
 

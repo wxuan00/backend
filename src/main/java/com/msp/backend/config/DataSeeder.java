@@ -373,9 +373,22 @@ public class DataSeeder implements CommandLineRunner {
                 r.setCurrency(t.getCurrency());
                 r.setAmount(t.getAmount());
 
-                BigDecimal refundAmount = t.getAmount().multiply(BigDecimal.valueOf(0.5 + random.nextDouble() * 0.5)).setScale(2, RoundingMode.HALF_UP);
+                String refundType = random.nextBoolean() ? "FULL" : "PARTIAL";
+                r.setRefundType(refundType);
+                BigDecimal refundAmount;
+                if ("FULL".equals(refundType)) {
+                    // Full refund: same as original amount
+                    refundAmount = t.getAmount();
+                } else {
+                    // Partial refund: between 10% and 99% of original amount
+                    double pct = 0.10 + random.nextDouble() * 0.89;
+                    refundAmount = t.getAmount().multiply(BigDecimal.valueOf(pct)).setScale(2, RoundingMode.HALF_UP);
+                    // Ensure partial is strictly less than original
+                    if (refundAmount.compareTo(t.getAmount()) >= 0) {
+                        refundAmount = t.getAmount().subtract(BigDecimal.valueOf(0.01));
+                    }
+                }
                 r.setRefundAmount(refundAmount);
-                r.setRefundType(random.nextBoolean() ? "FULL" : "PARTIAL");
                 r.setRefundRefNo("RFN" + String.format("%08d", random.nextInt(100000000)));
                 r.setStatus(random.nextBoolean() ? "APPROVED" : "PENDING");
 

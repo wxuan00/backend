@@ -1,5 +1,6 @@
 package com.msp.backend.modules.role;
 
+import com.msp.backend.util.AuditHelper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import java.util.List;
@@ -23,6 +24,8 @@ public class RoleService {
         if (roleRepository.findByRoleName(role.getRoleName()).isPresent()) {
             throw new RuntimeException("Role name already exists");
         }
+        role.setCreatedBy(AuditHelper.currentUser());
+        role.setLastModifiedBy(AuditHelper.currentUser());
         return roleRepository.save(role);
     }
 
@@ -31,6 +34,8 @@ public class RoleService {
         role.setRoleName(updated.getRoleName());
         role.setDescription(updated.getDescription());
         role.setRoleType(updated.getRoleType());
+        role.setLastModifiedBy(AuditHelper.currentUser());
+        role.setLastModifiedAt(java.time.LocalDateTime.now());
         return roleRepository.save(role);
     }
 

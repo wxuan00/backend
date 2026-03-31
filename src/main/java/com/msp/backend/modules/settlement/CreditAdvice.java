@@ -1,5 +1,6 @@
 package com.msp.backend.modules.settlement;
 
+import com.msp.backend.modules.merchant.Merchant;
 import jakarta.persistence.*;
 import lombok.Data;
 import java.math.BigDecimal;
@@ -16,7 +17,11 @@ public class CreditAdvice {
     private Long creditAdviceId;
 
     @Column(name = "merchant_id", nullable = false)
-    private Long merchantId; // FK to merchants
+    private Long merchantId;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "merchant_id", insertable = false, updatable = false)
+    private Merchant merchant;
 
     @Column(name = "account_no")
     private String accountNo;
@@ -33,9 +38,10 @@ public class CreditAdvice {
     @Column(name = "account_id")
     private String accountId;
 
-    // Transient field for display
-    @Transient
-    private String merchantName;
+    @com.fasterxml.jackson.annotation.JsonProperty("merchantName")
+    public String getMerchantName() {
+        return merchant != null ? merchant.getMerchantName() : null;
+    }
 
     @PrePersist
     protected void onCreate() {

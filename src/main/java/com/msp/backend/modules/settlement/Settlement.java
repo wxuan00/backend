@@ -16,7 +16,11 @@ public class Settlement {
     private Long settlementId;
 
     @Column(name = "credit_advice_id")
-    private Long creditAdviceId; // FK to credit_advices
+    private Long creditAdviceId;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "credit_advice_id", insertable = false, updatable = false)
+    private CreditAdvice creditAdvice;
 
     @Column(name = "settlement_date")
     private LocalDateTime settlementDate;
@@ -25,7 +29,7 @@ public class Settlement {
     private String settlementNo;
 
     @Column(name = "settlement_type")
-    private String settlementType; // e.g., DAILY, WEEKLY
+    private String settlementType;
 
     @Column(nullable = false)
     private String currency;
@@ -36,12 +40,22 @@ public class Settlement {
     @Column(name = "payment_amount", precision = 14, scale = 2)
     private BigDecimal paymentAmount;
 
-    // Transient fields for display
-    @Transient
-    private String merchantName;
-
     @Transient
     private Long merchantId;
+
+    @com.fasterxml.jackson.annotation.JsonProperty("merchantName")
+    public String getMerchantName() {
+        if (creditAdvice != null && creditAdvice.getMerchant() != null)
+            return creditAdvice.getMerchant().getMerchantName();
+        return null;
+    }
+
+    @com.fasterxml.jackson.annotation.JsonProperty("merchantId")
+    public Long getMerchantIdResolved() {
+        if (merchantId != null) return merchantId;
+        if (creditAdvice != null) return creditAdvice.getMerchantId();
+        return null;
+    }
 
     @PrePersist
     protected void onCreate() {

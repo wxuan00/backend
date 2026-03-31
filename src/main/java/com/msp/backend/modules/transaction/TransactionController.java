@@ -6,10 +6,12 @@ import com.msp.backend.modules.user.User;
 import com.msp.backend.modules.user.UserRepository;
 import com.msp.backend.modules.user.UserService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
+
 import java.util.List;
 
 @RestController
@@ -23,15 +25,30 @@ public class TransactionController {
     private final MerchantRepository merchantRepository;
 
     @GetMapping
-    public List<Transaction> getAllTransactions() {
+    public Page<Transaction> getAllTransactions(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "txnDate") String sortBy,
+            @RequestParam(defaultValue = "desc") String sortDir,
+            @RequestParam(required = false) String merchantName,
+            @RequestParam(required = false) String txnId,
+            @RequestParam(required = false) String cardNo,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String channel,
+            @RequestParam(required = false) String dateFrom,
+            @RequestParam(required = false) String dateTo
+    ) {
         User currentUser = getCurrentUser();
-        if ("ADMIN".equals(currentUser.getRole())) {
-            return transactionService.getAllTransactions();
-        } else {
-            Long merchantId = getMyMerchantId(currentUser);
-            if (merchantId == null) return List.of();
-            return transactionService.getTransactionsByMerchantId(merchantId);
+        Long restrictToMerchantId = null;
+        if (!"ADMIN".equals(currentUser.getRole())) {
+            restrictToMerchantId = getMyMerchantId(currentUser);
+            if (restrictToMerchantId == null) {
+                return Page.empty();
+            }
         }
+        return transactionService.getTransactionsPage(
+                restrictToMerchantId, merchantName, txnId, cardNo, status, channel, dateFrom, dateTo,
+                page, size, sortBy, sortDir);
     }
 
     @GetMapping("/{id}")

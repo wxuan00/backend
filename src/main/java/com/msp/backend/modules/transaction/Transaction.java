@@ -1,5 +1,6 @@
 package com.msp.backend.modules.transaction;
 
+import com.msp.backend.modules.merchant.Merchant;
 import jakarta.persistence.*;
 import lombok.Data;
 import java.math.BigDecimal;
@@ -18,14 +19,18 @@ public class Transaction {
     @Column(name = "merchant_id", nullable = false)
     private Long merchantId;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "merchant_id", insertable = false, updatable = false)
+    private Merchant merchant;
+
     @Column(name = "settlement_id")
-    private Long settlementId; // FK to settlements
+    private Long settlementId;
 
     @Column(name = "payment_channel")
-    private String paymentChannel; // e.g., POS, ONLINE, MOBILE
+    private String paymentChannel;
 
     @Column(nullable = false)
-    private String status; // APPROVED, PENDING, DECLINED
+    private String status;
 
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal amount;
@@ -34,10 +39,10 @@ public class Transaction {
     private LocalDateTime txnDate;
 
     @Column(name = "ref_no")
-    private String refNo; // Reference number
+    private String refNo;
 
     @Column(name = "card_no")
-    private String cardNo; // Masked card number
+    private String cardNo;
 
     @Column(nullable = false)
     private String currency;
@@ -54,9 +59,10 @@ public class Transaction {
     @Column(name = "nett_amount", precision = 12, scale = 2)
     private BigDecimal nettAmount;
 
-    // Transient field for display - populated from Merchant
-    @Transient
-    private String merchantName;
+    @com.fasterxml.jackson.annotation.JsonProperty("merchantName")
+    public String getMerchantName() {
+        return merchant != null ? merchant.getMerchantName() : null;
+    }
 
     @PrePersist
     protected void onCreate() {
