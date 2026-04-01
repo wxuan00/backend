@@ -27,6 +27,7 @@ public class UserController {
     private final RolePermissionRepository rolePermissionRepository;
     private final PermissionRepository permissionRepository;
     private final RoleRepository roleRepository;
+    private final UserRepository userRepository;
 
     // GET http://localhost:8080/api/users
     @GetMapping
@@ -86,9 +87,9 @@ public class UserController {
         result.put("role", user.getRole() != null ? user.getRole() : "");
         result.put("mfaEnabled", user.isMfaEnabled());
         result.put("createdAt", user.getCreatedAt() != null ? user.getCreatedAt().toString() : "");
-        result.put("createdBy", user.getCreatedBy() != null ? user.getCreatedBy() : "");
+        result.put("createdBy", AuditHelper.resolveDisplayName(user.getCreatedBy(), userRepository));
         result.put("lastModifiedAt", user.getLastModifiedAt() != null ? user.getLastModifiedAt().toString() : "");
-        result.put("lastModifiedBy", user.getLastModifiedBy() != null ? user.getLastModifiedBy() : "");
+        result.put("lastModifiedBy", AuditHelper.resolveDisplayName(user.getLastModifiedBy(), userRepository));
         result.put("roles", rolesList);
         result.put("permissions", permissions);
         return ResponseEntity.ok(result);

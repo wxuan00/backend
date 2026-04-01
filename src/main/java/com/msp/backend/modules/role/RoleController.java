@@ -1,5 +1,6 @@
 package com.msp.backend.modules.role;
 
+import com.msp.backend.modules.user.UserRepository;
 import com.msp.backend.util.AuditHelper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -18,6 +19,7 @@ public class RoleController {
     private final RolePermissionRepository rolePermissionRepository;
     private final PermissionRepository permissionRepository;
     private final jakarta.persistence.EntityManager entityManager;
+    private final UserRepository userRepository;
 
     @GetMapping
     public List<Role> getAllRoles() {
@@ -81,9 +83,9 @@ public class RoleController {
             map.put("roleType", role.getRoleType() != null ? role.getRoleType() : "");
             map.put("description", role.getDescription() != null ? role.getDescription() : "");
             map.put("createdAt", role.getCreatedAt() != null ? role.getCreatedAt().toString() : "");
-            map.put("createdBy", role.getCreatedBy() != null ? role.getCreatedBy() : "");
+            map.put("createdBy", AuditHelper.resolveDisplayName(role.getCreatedBy(), userRepository));
             map.put("lastModifiedAt", role.getLastModifiedAt() != null ? role.getLastModifiedAt().toString() : "");
-            map.put("lastModifiedBy", role.getLastModifiedBy() != null ? role.getLastModifiedBy() : "");
+            map.put("lastModifiedBy", AuditHelper.resolveDisplayName(role.getLastModifiedBy(), userRepository));
             map.put("permissions", rolePerms);
             return map;
         }).collect(Collectors.toList());
