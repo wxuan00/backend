@@ -14,9 +14,17 @@ public class RolePermission {
     @Column(name = "role_id")
     private Long roleId;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "role_id", insertable = false, updatable = false)
+    private Role role;
+
     @Id
     @Column(name = "permission_id")
     private Long permissionId;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "permission_id", insertable = false, updatable = false)
+    private Permission permission;
 
     @Column(name = "generated_by")
     private String generatedBy;

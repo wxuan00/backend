@@ -1,5 +1,6 @@
 package com.msp.backend.modules.analytics;
 
+import com.msp.backend.modules.merchant.Merchant;
 import jakarta.persistence.*;
 import lombok.Data;
 import java.time.LocalDateTime;
@@ -16,6 +17,10 @@ public class Analytics {
 
     @Column(name = "merchant_id", nullable = false)
     private Long merchantId; // FK to merchants
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "merchant_id", insertable = false, updatable = false)
+    private Merchant merchant;
 
     @Column(name = "data_name", nullable = false)
     private String dataName; // e.g., TOTAL_SALES, DECLINE_RATE, AVG_TXN

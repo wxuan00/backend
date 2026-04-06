@@ -1,6 +1,7 @@
 package com.msp.backend.modules.transaction;
 
 import com.msp.backend.modules.merchant.Merchant;
+import com.msp.backend.modules.settlement.Settlement;
 import jakarta.persistence.*;
 import lombok.Data;
 import java.math.BigDecimal;
@@ -25,6 +26,10 @@ public class Transaction {
 
     @Column(name = "settlement_id")
     private Long settlementId;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "settlement_id", insertable = false, updatable = false)
+    private Settlement settlement;
 
     @Column(name = "payment_channel")
     private String paymentChannel;

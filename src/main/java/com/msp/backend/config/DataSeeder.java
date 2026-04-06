@@ -98,7 +98,8 @@ public class DataSeeder implements CommandLineRunner {
         linkMerchantsToUsers(merchants, users);
         List<Transaction> transactions = seedTransactions(merchants);
         List<CreditAdvice> creditAdvices = seedCreditAdvices(merchants);
-        seedSettlements(creditAdvices, transactions);
+        List<Settlement> settlements = seedSettlements(creditAdvices, transactions);
+        updateCreditAdviceAmounts(creditAdvices, settlements);
         seedRefunds(transactions, merchants);
         seedAnalytics(merchants, transactions);
 
@@ -295,9 +296,9 @@ public class DataSeeder implements CommandLineRunner {
             t.setRefNo(d.get("refNo").textValue());
             t.setCardNo(d.get("cardNo").textValue());
             t.setTxnDescription(d.get("txnDescription").textValue());
-            t.setAmount(new BigDecimal(d.get("amount").textValue()));
+            t.setAmount(d.get("amount").decimalValue());
             t.setDiscountAmount(BigDecimal.ZERO);
-            t.setNettAmount(new BigDecimal(d.get("amount").textValue()));
+            t.setNettAmount(d.get("amount").decimalValue());
             t.setCurrency(d.get("currency").textValue());
             t.setStatus(d.get("status").textValue());
             t.setPaymentChannel(d.get("paymentChannel").textValue());
@@ -377,7 +378,7 @@ public class DataSeeder implements CommandLineRunner {
             ca.setAccountNo(d.get("accountNo").textValue());
             ca.setAccountId(d.get("accountId").textValue());
             ca.setCurrency(d.get("currency").textValue());
-            ca.setAmount(new BigDecimal(d.get("amount").textValue()));
+            ca.setAmount(BigDecimal.ZERO); // will be updated after settlements are seeded
             ca.setPaymentDate(LocalDateTime.parse(d.get("paymentDate").textValue()));
 
             allAdvices.add(creditAdviceRepository.save(ca));
@@ -387,12 +388,12 @@ public class DataSeeder implements CommandLineRunner {
         return allAdvices;
     }
 
-    private void seedSettlements(List<CreditAdvice> creditAdvices, List<Transaction> allTransactions) {
+    private List<Settlement> seedSettlements(List<CreditAdvice> creditAdvices, List<Transaction> allTransactions) {
         log.info("Seeding settlements...");
         List<JsonNode> data = loadJsonList(
                 "seed-data/settlements.json", new TypeReference<>() {});
 
-        int settlementCount = 0;
+        List<Settlement> allSettlements = new ArrayList<>();
         for (JsonNode d : data) {
             int caIdx = d.get("creditAdviceIndex").intValue();
             CreditAdvice ca = creditAdvices.get(caIdx);
@@ -416,22 +417,17 @@ public class DataSeeder implements CommandLineRunner {
                 }
             }
 
-            if (!settlementTxns.isEmpty()) {
-                BigDecimal settlementAmount = settlementTxns.stream()
-                        .map(t -> t.getNettAmount() != null ? t.getNettAmount() : t.getAmount())
-                        .reduce(BigDecimal.ZERO, BigDecimal::add)
-                        .setScale(2, RoundingMode.HALF_UP);
-                s.setSettlementAmount(settlementAmount);
-                s.setPaymentAmount(settlementAmount.multiply(BigDecimal.valueOf(0.975))
-                        .setScale(2, RoundingMode.HALF_UP));
-            } else {
-                s.setSettlementAmount(ca.getAmount());
-                s.setPaymentAmount(ca.getAmount().multiply(BigDecimal.valueOf(0.975))
-                        .setScale(2, RoundingMode.HALF_UP));
-            }
+            // Settlement amount = sum of linked transaction nett amounts
+            BigDecimal settlementAmount = settlementTxns.stream()
+                    .map(t -> t.getNettAmount() != null ? t.getNettAmount() : t.getAmount())
+                    .reduce(BigDecimal.ZERO, BigDecimal::add)
+                    .setScale(2, RoundingMode.HALF_UP);
+            s.setSettlementAmount(settlementAmount);
+            s.setPaymentAmount(settlementAmount.multiply(BigDecimal.valueOf(0.975))
+                    .setScale(2, RoundingMode.HALF_UP));
 
             Settlement saved = settlementRepository.save(s);
-            settlementCount++;
+            allSettlements.add(saved);
 
             // Link transactions back to this settlement
             for (Transaction t : settlementTxns) {
@@ -440,7 +436,23 @@ public class DataSeeder implements CommandLineRunner {
             }
         }
 
-        log.info("Created {} settlements", settlementCount);
+        log.info("Created {} settlements", allSettlements.size());
+        return allSettlements;
+    }
+
+    private void updateCreditAdviceAmounts(List<CreditAdvice> creditAdvices, List<Settlement> settlements) {
+        log.info("Updating credit advice amounts from settlements...");
+        // credit advice amount = sum of all its settlements' settlementAmount
+        for (CreditAdvice ca : creditAdvices) {
+            BigDecimal total = settlements.stream()
+                    .filter(s -> ca.getCreditAdviceId().equals(s.getCreditAdviceId()))
+                    .map(Settlement::getSettlementAmount)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add)
+                    .setScale(2, RoundingMode.HALF_UP);
+            ca.setAmount(total);
+            creditAdviceRepository.save(ca);
+        }
+        log.info("Credit advice amounts updated");
     }
 
     private void seedAnalytics(List<Merchant> merchants, List<Transaction> transactions) {

@@ -1,5 +1,6 @@
 package com.msp.backend.modules.user;
 
+import com.msp.backend.modules.role.Role;
 import jakarta.persistence.*;
 import lombok.Data;
 import java.time.LocalDateTime;
@@ -14,9 +15,17 @@ public class UserRole {
     @Column(name = "user_id")
     private Long userId;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", insertable = false, updatable = false)
+    private User user;
+
     @Id
     @Column(name = "role_id")
     private Long roleId;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "role_id", insertable = false, updatable = false)
+    private Role role;
 
     @Column(name = "generated_by")
     private String generatedBy;

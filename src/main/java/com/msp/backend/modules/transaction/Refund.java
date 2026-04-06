@@ -19,6 +19,10 @@ public class Refund {
     @Column(name = "transaction_id")
     private Long transactionId;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "transaction_id", insertable = false, updatable = false)
+    private Transaction transaction;
+
     @Column(name = "merchant_id", nullable = false)
     private Long merchantId;
 
