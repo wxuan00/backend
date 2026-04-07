@@ -119,10 +119,21 @@ public class UserService {
     }
 
     public void populateRole(User user) {
-        List<UserRole> roles = userRoleRepository.findByUserId(user.getUserId());
-        if (!roles.isEmpty()) {
-            Long roleId = roles.get(0).getRoleId();
-            roleRepository.findById(roleId).ifPresent(role -> user.setRole(role.getRoleName()));
+        List<UserRole> userRoles = userRoleRepository.findByUserId(user.getUserId());
+        if (userRoles.isEmpty()) return;
+
+        // Prefer ADMIN or MERCHANT (the system role) over any custom role
+        for (UserRole ur : userRoles) {
+            roleRepository.findById(ur.getRoleId()).ifPresent(role -> {
+                if ("ADMIN".equals(role.getRoleName()) || "MERCHANT".equals(role.getRoleName())) {
+                    user.setRole(role.getRoleName());
+                }
+            });
+        }
+        // Fallback: if no system role found, use the first role available
+        if (user.getRole() == null) {
+            roleRepository.findById(userRoles.get(0).getRoleId())
+                    .ifPresent(role -> user.setRole(role.getRoleName()));
         }
     }
 

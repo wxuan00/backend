@@ -123,14 +123,42 @@ public class UserController {
         return ResponseEntity.noContent().build();
     }
 
-    // Sync all assigned roles for a user (replaces existing set)
+    // Sync all assigned roles for a user (replaces existing set, but always preserves ADMIN/MERCHANT system role)
     @Transactional
     @PutMapping("/{id}/roles")
     public ResponseEntity<Void> syncRoles(@PathVariable Long id, @RequestBody java.util.List<Long> roleIds) {
         String actor = AuditHelper.currentUser();
+
+        // Collect system role IDs that must be preserved (ADMIN / MERCHANT)
+        java.util.Set<Long> systemRoleIds = new java.util.HashSet<>();
+        for (UserRole ur : userRoleRepository.findByUserId(id)) {
+            roleRepository.findById(ur.getRoleId()).ifPresent(r -> {
+                if ("ADMIN".equals(r.getRoleName()) || "MERCHANT".equals(r.getRoleName())) {
+                    systemRoleIds.add(r.getRoleId());
+                }
+            });
+        }
+
+        // Delete all current roles then re-insert
         userRoleRepository.deleteByUserId(id);
+
+        java.util.Set<Long> inserted = new java.util.HashSet<>();
+
+        // Always re-insert the preserved system role first
+        for (Long sysId : systemRoleIds) {
+            UserRole ur = new UserRole();
+            ur.setUserId(id);
+            ur.setRoleId(sysId);
+            ur.setGeneratedBy(actor);
+            ur.setLastModifiedBy(actor);
+            ur.setLastModifiedAt(java.time.LocalDateTime.now());
+            userRoleRepository.save(ur);
+            inserted.add(sysId);
+        }
+
+        // Then insert the requested custom roles (skip duplicates)
         for (Long roleId : roleIds) {
-            if (roleId != null) {
+            if (roleId != null && !inserted.contains(roleId)) {
                 UserRole ur = new UserRole();
                 ur.setUserId(id);
                 ur.setRoleId(roleId);
@@ -138,6 +166,7 @@ public class UserController {
                 ur.setLastModifiedBy(actor);
                 ur.setLastModifiedAt(java.time.LocalDateTime.now());
                 userRoleRepository.save(ur);
+                inserted.add(roleId);
             }
         }
         return ResponseEntity.ok().build();
