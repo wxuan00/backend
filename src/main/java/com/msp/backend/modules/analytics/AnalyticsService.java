@@ -10,7 +10,10 @@ import com.msp.backend.modules.transaction.Transaction;
 import com.msp.backend.modules.transaction.TransactionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
+import org.springframework.web.util.UriComponentsBuilder;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -29,12 +32,15 @@ import java.util.stream.Collectors;
 @Slf4j
 public class AnalyticsService {
 
+    private static final String SIDECAR_URL = "http://localhost:8000";
+
     private final AnalyticsRepository analyticsRepository;
     private final MerchantRepository merchantRepository;
     private final TransactionService transactionService;
     private final SettlementService settlementService;
     private final RefundRepository refundRepository;
     private final AIEngine aiEngine;
+    private final RestTemplate restTemplate;
 
     // ===== Analytics Records (persisted to Analytics table) =====
 
@@ -553,13 +559,79 @@ public class AnalyticsService {
         List<Transaction> transactions = transactionService.getAllTransactions();
         List<Merchant> merchants = merchantRepository.findAll();
         List<Settlement> settlements = settlementService.getAllSettlements();
-        return aiEngine.generateInsights(transactions, merchants, settlements);
+        List<Map<String, Object>> insights = aiEngine.generateInsights(transactions, merchants, settlements);
+        // Enrich with Python model interpretations
+        aiEngine.analyzeCustomerSegments(getRfmSegments(null), insights);
+        aiEngine.analyzeChurnRisk(getChurnRisk(null, 90), insights);
+        aiEngine.analyzeCashFlowForecast(getCashFlowForecast(null, 30), insights);
+        return insights;
     }
 
     public List<Map<String, Object>> getMerchantInsights(Long merchantId) {
         List<Transaction> transactions = transactionService.getTransactionsByMerchantId(merchantId);
         List<Settlement> settlements = settlementService.getSettlementsByMerchantId(merchantId);
-        return aiEngine.generateMerchantInsights(transactions, settlements);
+        List<Map<String, Object>> insights = aiEngine.generateMerchantInsights(transactions, settlements);
+        // Enrich with Python model interpretations scoped to this merchant
+        aiEngine.analyzeCustomerSegments(getRfmSegments(merchantId), insights);
+        aiEngine.analyzeChurnRisk(getChurnRisk(merchantId, 90), insights);
+        aiEngine.analyzeCashFlowForecast(getCashFlowForecast(merchantId, 30), insights);
+        return insights;
+    }
+
+    // ===== Python Sidecar Proxy Methods =====
+
+    /**
+     * Daily scheduled task: recompute KPI analytics for all merchants at 02:00.
+     */
+    @Scheduled(cron = "0 0 2 * * *")
+    public void scheduledDailyAnalytics() {
+        log.info("Scheduled daily analytics recomputation started");
+        computeAndStoreAnalytics();
+    }
+
+    /**
+     * Call the Python sidecar's /rfm endpoint and return the result.
+     * @param merchantId optional — null means fleet-wide
+     */
+    public Map<String, Object> getRfmSegments(Long merchantId) {
+        return callSidecar("/rfm", merchantId, null, null);
+    }
+
+    /**
+     * Call the Python sidecar's /churn endpoint and return the result.
+     * @param merchantId optional — null means fleet-wide
+     * @param churnDays  days of inactivity that define churn (default 90)
+     */
+    public Map<String, Object> getChurnRisk(Long merchantId, Integer churnDays) {
+        return callSidecar("/churn", merchantId, churnDays, null);
+    }
+
+    /**
+     * Call the Python sidecar's /forecast endpoint and return the result.
+     * @param merchantId   optional — null means fleet-wide
+     * @param horizonDays  how many days ahead to forecast (default 30)
+     */
+    public Map<String, Object> getCashFlowForecast(Long merchantId, Integer horizonDays) {
+        return callSidecar("/forecast", merchantId, null, horizonDays);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> callSidecar(String path, Long merchantId, Integer churnDays, Integer horizonDays) {
+        try {
+            UriComponentsBuilder builder = UriComponentsBuilder
+                    .fromUriString(SIDECAR_URL + path);
+            if (merchantId != null) builder.queryParam("merchant_id", merchantId);
+            if (churnDays != null)  builder.queryParam("churn_days", churnDays);
+            if (horizonDays != null) builder.queryParam("horizon_days", horizonDays);
+
+            return restTemplate.getForObject(builder.toUriString(), Map.class);
+        } catch (Exception ex) {
+            log.error("Python sidecar call to {} failed: {}", path, ex.getMessage());
+            Map<String, Object> error = new LinkedHashMap<>();
+            error.put("error", "AI sidecar unavailable. Please ensure the Python service is running on port 8000.");
+            error.put("detail", ex.getMessage());
+            return error;
+        }
     }
 
     // ===== Helper Methods =====

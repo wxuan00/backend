@@ -81,8 +81,8 @@ public class DataSeeder implements CommandLineRunner {
         userRoleRepository.deleteAll();
         rolePermissionRepository.deleteAll();
         permissionRepository.deleteAll();
+        merchantRepository.deleteAll();   // must delete before users (FK: merchant → user)
         userRepository.deleteAll();
-        merchantRepository.deleteAll();
         roleRepository.deleteAll();
         seedAll();
     }
@@ -286,32 +286,86 @@ public class DataSeeder implements CommandLineRunner {
         List<JsonNode> data = loadJsonList(
                 "seed-data/transactions.json", new TypeReference<>() {});
 
+        // ── Spread transactions across the last 180 days for AI analytics ──
+        // We repeat the JSON entries multiple times with randomised dates so that
+        // XGBoost churn, Prophet forecasting, and RFM segmentation have enough
+        // date-range diversity to train properly.
+        LocalDateTime now = LocalDateTime.now();
+        int daysSpread = 180;   // 6 months of history
+        int repeats    = 6;     // multiply data volume ×6 (~1500 txns)
+
+        // Cards that will appear ONLY >90 days ago (simulate churned customers)
+        java.util.Set<String> churnedCards = java.util.Set.of(
+                "4485770012345612", "4539667788003349", "5102991144567734");
+
+        // Cards that will ONLY appear in the last 60 days (new customers)
+        java.util.Set<String> newCards = java.util.Set.of(
+                "4024007123456003", "4012334477890056");
+
+        // Extra payment channels and currencies for realism
+        String[] extraChannels = {"CARD", "ONLINE", "E_WALLET", "QR_PAY", "BANK_TRANSFER"};
+        String[] currencies = {"MYR", "MYR", "MYR", "MYR", "USD", "SGD"};
+
         List<Transaction> allTransactions = new ArrayList<>();
-        for (int i = 0; i < data.size(); i++) {
-            JsonNode d = data.get(i);
-            Merchant merchant = merchants.get(i % merchants.size());
+        int refSeq = 500000;    // unique refNo counter
 
-            Transaction t = new Transaction();
-            t.setMerchantId(merchant.getMerchantId());
-            t.setRefNo(d.get("refNo").textValue());
-            t.setCardNo(d.get("cardNo").textValue());
-            t.setTxnDescription(d.get("txnDescription").textValue());
-            t.setAmount(d.get("amount").decimalValue());
-            t.setDiscountAmount(BigDecimal.ZERO);
-            t.setNettAmount(d.get("amount").decimalValue());
-            t.setCurrency(d.get("currency").textValue());
-            t.setStatus(d.get("status").textValue());
-            t.setPaymentChannel(d.get("paymentChannel").textValue());
-            t.setTxnDate(LocalDateTime.parse(d.get("txnDate").textValue()));
+        for (int round = 0; round < repeats; round++) {
+            for (int i = 0; i < data.size(); i++) {
+                JsonNode d = data.get(i);
+                Merchant merchant = merchants.get(i % merchants.size());
+                String cardNo = d.get("cardNo").textValue();
 
-            if ("APPROVED".equals(t.getStatus())) {
-                t.setPostedDate(t.getTxnDate().plusDays(1 + random.nextInt(3)));
+                Transaction t = new Transaction();
+                t.setMerchantId(merchant.getMerchantId());
+                t.setRefNo(String.valueOf(refSeq++));
+                t.setCardNo(cardNo);
+                t.setTxnDescription(d.get("txnDescription").textValue());
+
+                // Slightly vary the amount each round (±20 %) for realism
+                BigDecimal baseAmount = d.get("amount").decimalValue();
+                double factor = 0.80 + random.nextDouble() * 0.40;  // 0.80 – 1.20
+                BigDecimal amount = baseAmount.multiply(BigDecimal.valueOf(factor))
+                        .setScale(2, RoundingMode.HALF_UP);
+                t.setAmount(amount);
+                t.setDiscountAmount(BigDecimal.ZERO);
+                t.setNettAmount(amount);
+
+                // Add currency and channel variety
+                t.setCurrency(currencies[random.nextInt(currencies.length)]);
+                t.setPaymentChannel(extraChannels[random.nextInt(extraChannels.length)]);
+
+                // ~8 % of transactions are DECLINED for realism
+                String status = d.get("status").textValue();
+                if ("APPROVED".equals(status) && random.nextInt(100) < 8) {
+                    status = "DECLINED";
+                }
+                t.setStatus(status);
+
+                // Determine date range based on card behaviour
+                int daysAgo;
+                if (churnedCards.contains(cardNo)) {
+                    daysAgo = 91 + random.nextInt(daysSpread - 91); // only old (>90 days)
+                } else if (newCards.contains(cardNo)) {
+                    daysAgo = random.nextInt(60);                   // only recent (<60 days)
+                } else {
+                    daysAgo = random.nextInt(daysSpread);           // full range
+                }
+                int hour    = 7 + random.nextInt(13); // 07:00 – 19:59
+                int minute  = random.nextInt(60);
+                LocalDateTime txnDate = now.minusDays(daysAgo)
+                        .withHour(hour).withMinute(minute).withSecond(0).withNano(0);
+                t.setTxnDate(txnDate);
+
+                if ("APPROVED".equals(t.getStatus())) {
+                    t.setPostedDate(txnDate.plusDays(1 + random.nextInt(3)));
+                }
+
+                allTransactions.add(transactionRepository.save(t));
             }
-
-            allTransactions.add(transactionRepository.save(t));
         }
 
-        log.info("Created {} transactions", allTransactions.size());
+        log.info("Created {} transactions ({}× base data spread over {} days)",
+                allTransactions.size(), repeats, daysSpread);
         return allTransactions;
     }
 
@@ -320,7 +374,15 @@ public class DataSeeder implements CommandLineRunner {
         List<JsonNode> data = loadJsonList(
                 "seed-data/refunds.json", new TypeReference<>() {});
 
+        // Also randomly pick ~5% of APPROVED transactions for additional refunds
+        List<Transaction> approvedTxns = transactions.stream()
+                .filter(t -> "APPROVED".equals(t.getStatus()))
+                .toList();
+
         int refundCount = 0;
+        int refundSeq = 100;
+
+        // 1) Seed refunds from JSON template (linked to specific transactions)
         for (JsonNode d : data) {
             int txnIdx = d.get("transactionIndex").intValue();
             if (txnIdx >= transactions.size()) continue;
@@ -348,12 +410,57 @@ public class DataSeeder implements CommandLineRunner {
             }
 
             r.setRefundRefNo(d.get("refundRefNo").textValue());
-            r.setStatus(d.get("status").textValue());
+            String status = d.get("status").textValue();
+            r.setStatus(status);
             r.setTransactionDate(t.getTxnDate());
-            r.setSubmissionDate(LocalDateTime.parse(d.get("submissionDate").textValue()));
+            // Derive submission date relative to the transaction date (2–7 days later)
+            r.setSubmissionDate(t.getTxnDate().plusDays(2 + random.nextInt(6)));
 
-            if ("APPROVED".equals(r.getStatus()) && d.has("postedDate")) {
-                r.setPostedDate(LocalDateTime.parse(d.get("postedDate").textValue()));
+            if ("APPROVED".equals(r.getStatus())) {
+                r.setPostedDate(r.getSubmissionDate().plusDays(2 + random.nextInt(3)));
+                // Mark the original transaction as REFUNDED but keep it in transactions table
+                t.setStatus("REFUNDED");
+                transactionRepository.save(t);
+            }
+
+            refundRepository.save(r);
+            refundCount++;
+        }
+
+        // 2) Generate additional random refunds (~5% of approved transactions)
+        for (Transaction t : approvedTxns) {
+            if (random.nextInt(100) >= 5) continue; // skip 95%
+
+            Refund r = new Refund();
+            r.setTransactionId(t.getTransactionId());
+            r.setMerchantId(t.getMerchantId());
+            r.setCardNo(t.getCardNo());
+            r.setCurrency(t.getCurrency());
+            r.setAmount(t.getAmount());
+
+            boolean isFull = random.nextBoolean();
+            r.setRefundType(isFull ? "FULL" : "PARTIAL");
+            if (isFull) {
+                r.setRefundAmount(t.getAmount());
+            } else {
+                int pct = 20 + random.nextInt(61); // 20-80%
+                r.setRefundAmount(t.getAmount()
+                        .multiply(BigDecimal.valueOf(pct))
+                        .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP));
+            }
+
+            r.setRefundRefNo("RFN" + String.format("%08d", refundSeq++));
+            r.setTransactionDate(t.getTxnDate());
+            r.setSubmissionDate(t.getTxnDate().plusDays(2 + random.nextInt(6)));
+
+            // 70% approved, 30% pending
+            if (random.nextInt(100) < 70) {
+                r.setStatus("APPROVED");
+                r.setPostedDate(r.getSubmissionDate().plusDays(2 + random.nextInt(3)));
+                t.setStatus("REFUNDED");
+                transactionRepository.save(t);
+            } else {
+                r.setStatus("PENDING");
             }
 
             refundRepository.save(r);
@@ -368,8 +475,10 @@ public class DataSeeder implements CommandLineRunner {
         List<JsonNode> data = loadJsonList(
                 "seed-data/credit-advices.json", new TypeReference<>() {});
 
+        LocalDateTime now = LocalDateTime.now();
         List<CreditAdvice> allAdvices = new ArrayList<>();
-        for (JsonNode d : data) {
+        for (int i = 0; i < data.size(); i++) {
+            JsonNode d = data.get(i);
             int merchantIdx = d.get("merchantIndex").intValue();
             Merchant merchant = merchants.get(merchantIdx);
 
@@ -379,7 +488,8 @@ public class DataSeeder implements CommandLineRunner {
             ca.setAccountId(d.get("accountId").textValue());
             ca.setCurrency(d.get("currency").textValue());
             ca.setAmount(BigDecimal.ZERO); // will be updated after settlements are seeded
-            ca.setPaymentDate(LocalDateTime.parse(d.get("paymentDate").textValue()));
+            // Spread payment dates across the last 60 days
+            ca.setPaymentDate(now.minusDays(i * 2L + random.nextInt(3)).withHour(10 + random.nextInt(6)).withMinute(0).withSecond(0));
 
             allAdvices.add(creditAdviceRepository.save(ca));
         }
@@ -403,7 +513,8 @@ public class DataSeeder implements CommandLineRunner {
             s.setSettlementNo(d.get("settlementNo").textValue());
             s.setSettlementType(d.get("settlementType").textValue());
             s.setCurrency(d.get("currency").textValue());
-            s.setSettlementDate(LocalDateTime.parse(d.get("settlementDate").textValue()));
+            // Settlement date = 1-3 days before the credit-advice payment date
+            s.setSettlementDate(ca.getPaymentDate().minusDays(1 + random.nextInt(3)));
 
             // Collect referenced transactions
             List<Transaction> settlementTxns = new ArrayList<>();

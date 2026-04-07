@@ -133,6 +133,43 @@ public class AnalyticsController {
         return analyticsService.getAnalyticsForMerchant(merchantId);
     }
 
+    // ===== AI Model Endpoints (Python Sidecar Proxy) =====
+
+    /**
+     * RFM customer segmentation via K-Means (Python sidecar).
+     * Admin sees fleet-wide; merchant sees own data.
+     */
+    @GetMapping("/rfm")
+    public Map<String, Object> getRfmSegments() {
+        User currentUser = getCurrentUser();
+        Long merchantId = "ADMIN".equals(currentUser.getRole()) ? null : getMyMerchantId(currentUser);
+        return analyticsService.getRfmSegments(merchantId);
+    }
+
+    /**
+     * Customer churn prediction via XGBoost (Python sidecar).
+     * @param churnDays days of inactivity that defines churn (default 90)
+     */
+    @GetMapping("/churn")
+    public Map<String, Object> getChurnRisk(
+            @RequestParam(defaultValue = "90") int churnDays) {
+        User currentUser = getCurrentUser();
+        Long merchantId = "ADMIN".equals(currentUser.getRole()) ? null : getMyMerchantId(currentUser);
+        return analyticsService.getChurnRisk(merchantId, churnDays);
+    }
+
+    /**
+     * Daily cash-flow forecast via Prophet (Python sidecar).
+     * @param horizonDays how many days ahead to forecast (default 30)
+     */
+    @GetMapping("/forecast")
+    public Map<String, Object> getCashFlowForecast(
+            @RequestParam(defaultValue = "30") int horizonDays) {
+        User currentUser = getCurrentUser();
+        Long merchantId = "ADMIN".equals(currentUser.getRole()) ? null : getMyMerchantId(currentUser);
+        return analyticsService.getCashFlowForecast(merchantId, horizonDays);
+    }
+
     // ===== Helpers =====
 
     private User getCurrentUser() {

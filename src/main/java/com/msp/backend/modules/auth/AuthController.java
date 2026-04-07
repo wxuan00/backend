@@ -132,4 +132,31 @@ public class AuthController {
         }
         return ResponseEntity.ok(response);
     }
+
+    // Forgot password - generate reset token
+    @PostMapping("/forgot-password")
+    public ResponseEntity<Map<String, Object>> forgotPassword(@RequestBody Map<String, String> request) {
+        String email = request.get("email");
+        if (email == null || email.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Email is required."));
+        }
+        Map<String, Object> result = authService.forgotPassword(email.trim().toLowerCase());
+        return ResponseEntity.ok(result);
+    }
+
+    // Reset password using token
+    @PostMapping("/reset-password")
+    public ResponseEntity<Map<String, Object>> resetPassword(@RequestBody Map<String, String> request) {
+        String token = request.get("token");
+        String newPassword = request.get("newPassword");
+        if (token == null || token.isBlank() || newPassword == null || newPassword.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Token and new password are required."));
+        }
+        try {
+            authService.resetPassword(token.trim(), newPassword);
+            return ResponseEntity.ok(Map.of("message", "Password has been reset successfully."));
+        } catch (RuntimeException ex) {
+            return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage()));
+        }
+    }
 }

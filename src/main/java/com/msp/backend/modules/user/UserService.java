@@ -45,7 +45,10 @@ public class UserService {
         if (roleName == null) roleName = "MERCHANT";
         if (user.getStatus() == null) user.setStatus("ACTIVE");
 
-        user.setPassword(passwordEncoder.encode(user.getPassword()));
+        String rawPassword = (user.getPassword() == null || user.getPassword().isBlank())
+                ? "P@ssw0rd"
+                : user.getPassword();
+        user.setPassword(passwordEncoder.encode(rawPassword));
         user.setCreatedAt(java.time.LocalDateTime.now());
         user.setCreatedBy(AuditHelper.currentUser());
         user.setLastModifiedBy(AuditHelper.currentUser());

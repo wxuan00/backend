@@ -29,7 +29,7 @@ public class UserController {
     private final RoleRepository roleRepository;
     private final UserRepository userRepository;
 
-    // GET http://localhost:8080/api/users
+    // GET http://localhost:8001/api/users
     @GetMapping
     public List<User> getAllUsers() {
         return userService.getAllUsers();

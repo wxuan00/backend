@@ -8,6 +8,7 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     Optional<User> findByEmail(String email);
     Optional<User> findByDisplayNameIgnoreCase(String displayName);
+    Optional<User> findByResetToken(String resetToken);
     List<User> findByDeletedAtIsNull();
     List<User> findByDeletedAtIsNullAndStatus(String status);
     List<User> findByLastLoginAtBeforeAndDeletedAtIsNullAndStatus(java.time.LocalDateTime cutoff, String status);

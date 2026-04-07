@@ -242,4 +242,168 @@ public class AIEngine {
         insight.put("generatedAt", LocalDateTime.now().toString());
         return insight;
     }
+
+    // ===== AI Model Result Interpreters =====
+
+    /**
+     * Interpret Python sidecar RFM segmentation results into human-readable insights.
+     */
+    @SuppressWarnings("unchecked")
+    public void analyzeCustomerSegments(Map<String, Object> rfmResult, List<Map<String, Object>> insights) {
+        if (rfmResult == null || rfmResult.containsKey("error")) {
+            insights.add(createInsight("Customer Segmentation", "RFM segmentation data unavailable — ensure the AI sidecar is running.", "warning", "segmentation"));
+            return;
+        }
+
+        List<Map<String, Object>> summary = (List<Map<String, Object>>) rfmResult.get("clusterSummary");
+        if (summary == null || summary.isEmpty()) return;
+
+        int totalCustomers = rfmResult.containsKey("totalCustomers") ? (int) rfmResult.get("totalCustomers") : 0;
+
+        // Count champions (lowest recency cluster)
+        Map<String, Object> champions = summary.stream()
+                .filter(c -> "Champions".equals(c.get("label")))
+                .findFirst().orElse(null);
+        Map<String, Object> atRisk = summary.stream()
+                .filter(c -> "At Risk".equals(c.get("label")))
+                .findFirst().orElse(null);
+
+        if (champions != null) {
+            int count = (int) champions.get("count");
+            double pct = totalCustomers > 0 ? (double) count / totalCustomers * 100 : 0;
+            String msg = String.format(
+                    "You have %d 'Champion' customers (%.0f%% of base) — high frequency, recent buyers. Consider a loyalty reward or VIP tier to retain them.",
+                    count, pct);
+            insights.add(createInsight("Champion Customers 🏆", msg, "success", "segmentation"));
+        }
+
+        if (atRisk != null) {
+            int count = (int) atRisk.get("count");
+            double pct = totalCustomers > 0 ? (double) count / totalCustomers * 100 : 0;
+            String msg = String.format(
+                    "%d customers (%.0f%% of base) are classified 'At Risk' — previously active but showing reduced engagement. A targeted re-engagement campaign is recommended.",
+                    count, pct);
+            insights.add(createInsight("At-Risk Customers ⚠️", msg, "warning", "segmentation"));
+        }
+
+        Double silhouette = rfmResult.containsKey("silhouetteScore") && rfmResult.get("silhouetteScore") != null
+                ? ((Number) rfmResult.get("silhouetteScore")).doubleValue() : null;
+        String quality = silhouette == null ? "" : silhouette > 0.5 ? " (model quality: good)" : silhouette > 0.3 ? " (model quality: fair)" : " (model quality: weak — more data improves this)";
+        insights.add(createInsight("RFM Segmentation Model" + quality, String.format("Segmented %d unique customers into %d clusters using K-Means RFM analysis.", totalCustomers, summary.size()), "info", "segmentation"));
+    }
+
+    /**
+     * Interpret Python sidecar XGBoost churn prediction results into insights.
+     */
+    @SuppressWarnings("unchecked")
+    public void analyzeChurnRisk(Map<String, Object> churnResult, List<Map<String, Object>> insights) {
+        if (churnResult == null || churnResult.containsKey("error")) {
+            insights.add(createInsight("Churn Prediction", "Churn prediction unavailable — ensure the AI sidecar is running.", "warning", "churn"));
+            return;
+        }
+
+        int highRiskCount = churnResult.containsKey("highRiskCount") ? (int) churnResult.get("highRiskCount") : 0;
+        int totalCustomers = churnResult.containsKey("totalCustomers") ? (int) churnResult.get("totalCustomers") : 1;
+        double churnRate = churnResult.containsKey("churnRate") ? ((Number) churnResult.get("churnRate")).doubleValue() : 0;
+        Number acc = (Number) churnResult.get("modelAccuracy");
+        Number auc = (Number) churnResult.get("rocAuc");
+
+        double highRiskPct = totalCustomers > 0 ? (double) highRiskCount / totalCustomers * 100 : 0;
+        String severity = highRiskPct > 30 ? "danger" : highRiskPct > 15 ? "warning" : "success";
+        String msg = String.format(
+                "%d customers (%.0f%% of base) have >70%% churn probability. Historical churn rate: %.1f%%. %s",
+                highRiskCount, highRiskPct, churnRate,
+                highRiskPct > 15 ? "Proactive outreach or promotions are recommended." : "Churn risk is within acceptable range.");
+        insights.add(createInsight("Churn Risk Alert", msg, severity, "churn"));
+
+        if (acc != null) {
+            String perfMsg = String.format(
+                    "XGBoost churn model trained on RFM features. Accuracy: %.1f%%%s.",
+                    acc.doubleValue() * 100,
+                    auc != null ? String.format(", ROC-AUC: %.3f", auc.doubleValue()) : "");
+            insights.add(createInsight("Churn Model Performance", perfMsg, "info", "churn"));
+        }
+
+        // ── SHAP / XAI Explainability ──
+        analyzeChurnXAI(churnResult, insights);
+    }
+
+    /**
+     * Interpret SHAP (SHapley Additive exPlanations) values from the churn model
+     * into human-readable insights — Explainable AI (XAI).
+     */
+    @SuppressWarnings("unchecked")
+    private void analyzeChurnXAI(Map<String, Object> churnResult, List<Map<String, Object>> insights) {
+        Map<String, Object> globalImportance = (Map<String, Object>) churnResult.get("globalFeatureImportance");
+        if (globalImportance == null || globalImportance.isEmpty()) return;
+
+        // Find the most influential feature globally
+        String topFeature = null;
+        double topValue = -1;
+        for (Map.Entry<String, Object> entry : globalImportance.entrySet()) {
+            double val = ((Number) entry.getValue()).doubleValue();
+            if (val > topValue) {
+                topValue = val;
+                topFeature = entry.getKey();
+            }
+        }
+
+        // Build a ranked list
+        List<Map.Entry<String, Object>> ranked = new ArrayList<>(globalImportance.entrySet());
+        ranked.sort((a, b) -> Double.compare(
+                ((Number) b.getValue()).doubleValue(),
+                ((Number) a.getValue()).doubleValue()));
+
+        StringBuilder featureRanking = new StringBuilder();
+        for (int i = 0; i < ranked.size(); i++) {
+            Map.Entry<String, Object> e = ranked.get(i);
+            featureRanking.append(String.format("%d) %s (impact: %.4f)", i + 1, e.getKey(), ((Number) e.getValue()).doubleValue()));
+            if (i < ranked.size() - 1) featureRanking.append(", ");
+        }
+
+        String xaiMsg = String.format(
+                "SHAP analysis identifies '%s' as the #1 driver of churn predictions. " +
+                "Global feature importance ranking: %s. " +
+                "This means %s is the most significant factor the AI model uses to distinguish churners from loyal customers.",
+                topFeature, featureRanking, topFeature);
+        insights.add(createInsight("🔍 Explainable AI — Churn Drivers", xaiMsg, "info", "churn-xai"));
+
+        // Generate actionable advice based on top feature
+        String advice;
+        if ("Recency".equals(topFeature)) {
+            advice = "Since 'Recency' (days since last transaction) is the strongest churn signal, consider implementing automated re-engagement campaigns (e.g., targeted discounts or reminders) for customers who haven't transacted in 30+ days.";
+        } else if ("Frequency".equals(topFeature)) {
+            advice = "Since 'Frequency' (number of transactions) is the strongest churn signal, consider introducing loyalty programs or transaction-based rewards to incentivize repeat purchases.";
+        } else {
+            advice = "Since 'Monetary' (total spending) is the strongest churn signal, high-value customers who reduce spending may be at risk. Consider VIP retention programs or personalized offers for big spenders showing declining activity.";
+        }
+        insights.add(createInsight("💡 AI Recommendation", advice, "success", "churn-xai"));
+    }
+
+    /**
+     * Interpret Python sidecar Prophet forecast results into insights.
+     */
+    public void analyzeCashFlowForecast(Map<String, Object> forecastResult, List<Map<String, Object>> insights) {
+        if (forecastResult == null || forecastResult.containsKey("error")) {
+            insights.add(createInsight("Cash Flow Forecast", "Cash flow forecasting unavailable — ensure the AI sidecar is running.", "warning", "forecasting"));
+            return;
+        }
+
+        Number total = (Number) forecastResult.get("totalPredicted");
+        Number changePct = (Number) forecastResult.get("changePercent");
+        int horizonDays = forecastResult.containsKey("horizonDays") ? (int) forecastResult.get("horizonDays") : 30;
+
+        if (total == null) return;
+
+        String changeStr = changePct != null
+                ? String.format(" (%s%.1f%% vs previous %d-day window)", changePct.doubleValue() >= 0 ? "+" : "", changePct.doubleValue(), horizonDays)
+                : "";
+        String severity = changePct != null && changePct.doubleValue() > 10 ? "success"
+                : changePct != null && changePct.doubleValue() < -10 ? "warning" : "info";
+
+        String msg = String.format(
+                "Prophet AI predicts MYR %s total revenue over the next %d days%s.",
+                String.format("%.2f", total.doubleValue()), horizonDays, changeStr);
+        insights.add(createInsight("Cash Flow Forecast 📈", msg, severity, "forecasting"));
+    }
 }
