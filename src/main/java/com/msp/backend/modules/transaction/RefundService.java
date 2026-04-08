@@ -21,6 +21,7 @@ import java.util.List;
 public class RefundService {
 
     private final RefundRepository refundRepository;
+    private final TransactionRepository transactionRepository;
 
     public List<Refund> getAllRefunds() {
         return refundRepository.findAllByOrderBySubmissionDateDesc();
@@ -36,11 +37,21 @@ public class RefundService {
                 .orElseThrow(() -> new RuntimeException("Refund not found"));
     }
 
+    @Transactional
     public Refund requestRefund(Refund refund) {
         refund.setStatus("PENDING");
-        return refundRepository.save(refund);
+        Refund saved = refundRepository.save(refund);
+        // Mark the original transaction as refund-requested
+        if (refund.getTransactionId() != null) {
+            transactionRepository.findById(refund.getTransactionId()).ifPresent(txn -> {
+                txn.setStatus("REFUND_REQUESTED");
+                transactionRepository.save(txn);
+            });
+        }
+        return saved;
     }
 
+    @Transactional
     public Refund cancelRefund(Long id) {
         Refund refund = refundRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Refund not found"));
@@ -48,7 +59,15 @@ public class RefundService {
             throw new RuntimeException("Only PENDING refunds can be cancelled");
         }
         refund.setStatus("CANCELLED");
-        return refundRepository.save(refund);
+        Refund saved = refundRepository.save(refund);
+        // Revert the original transaction status back to APPROVED
+        if (refund.getTransactionId() != null) {
+            transactionRepository.findById(refund.getTransactionId()).ifPresent(txn -> {
+                txn.setStatus("APPROVED");
+                transactionRepository.save(txn);
+            });
+        }
+        return saved;
     }
 
     public Page<Refund> getRefundsPage(
