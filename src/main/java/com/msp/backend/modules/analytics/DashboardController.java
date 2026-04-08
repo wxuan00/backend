@@ -177,13 +177,20 @@ public class DashboardController {
                 .collect(Collectors.groupingBy(Settlement::getSettlementType, Collectors.counting()));
         charts.put("settlementTypes", settlementTypes);
 
-        // 5. Transaction Amount by Currency (Bar)
-        Map<String, Double> amountByCurrency = transactions.stream()
-                .filter(t -> t.getCurrency() != null)
-                .collect(Collectors.groupingBy(
-                        Transaction::getCurrency,
-                        Collectors.summingDouble(t -> t.getAmount() != null ? t.getAmount().doubleValue() : 0)));
-        charts.put("amountByCurrency", amountByCurrency);
+        // 5. Daily Revenue (MYR) – Last 7 days (Bar)
+        Map<String, Double> dailyRevenue = new LinkedHashMap<>();
+        for (int i = 6; i >= 0; i--) {
+            LocalDateTime day = LocalDateTime.now().minusDays(i);
+            dailyRevenue.put(day.format(dayFmt), 0.0);
+        }
+        transactions.stream()
+                .filter(t -> t.getTxnDate() != null && t.getTxnDate().isAfter(sevenDaysAgo)
+                        && t.getAmount() != null)
+                .forEach(t -> {
+                    String key = t.getTxnDate().format(dayFmt);
+                    dailyRevenue.computeIfPresent(key, (k, v) -> v + t.getAmount().doubleValue());
+                });
+        charts.put("dailyRevenue", dailyRevenue);
 
         // 6. Top 5 Merchants by Transaction Volume (Bar) - Admin only
         if ("ADMIN".equals(currentUser.getRole())) {
