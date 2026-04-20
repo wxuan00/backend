@@ -32,6 +32,7 @@ public class RefundController {
             @RequestParam(defaultValue = "desc") String sortDir,
             @RequestParam(required = false) String merchantName,
             @RequestParam(required = false) String refundRefNo,
+            @RequestParam(required = false) String transactionId,
             @RequestParam(required = false) String cardNo,
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String refundType,
@@ -45,7 +46,7 @@ public class RefundController {
             if (restrictToMerchantId == null) return Page.empty();
         }
         return refundService.getRefundsPage(
-                restrictToMerchantId, merchantName, refundRefNo, cardNo, status, refundType, dateFrom, dateTo,
+                restrictToMerchantId, merchantName, refundRefNo, transactionId, cardNo, status, refundType, dateFrom, dateTo,
                 page, size, sortBy, sortDir);
     }
 

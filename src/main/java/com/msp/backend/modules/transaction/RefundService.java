@@ -74,6 +74,7 @@ public class RefundService {
             Long restrictToMerchantId,
             String merchantName,
             String refundRefNo,
+            String transactionId,
             String cardNo,
             String status,
             String refundType,
@@ -116,6 +117,9 @@ public class RefundService {
             }
             if (refundRefNo != null && !refundRefNo.isBlank()) {
                 predicates.add(cb.like(cb.lower(root.get("refundRefNo")), "%" + refundRefNo.toLowerCase().trim() + "%"));
+            }
+            if (transactionId != null && !transactionId.isBlank()) {
+                predicates.add(cb.like(cb.toString(root.get("transactionId")), "%" + transactionId.trim() + "%"));
             }
             if (cardNo != null && !cardNo.isBlank()) {
                 predicates.add(cb.like(cb.lower(root.get("cardNo")), "%" + cardNo.toLowerCase().trim() + "%"));

@@ -12,9 +12,8 @@ import java.time.LocalDateTime;
 public class User {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "user_id")
-    private Long userId;
+    private String userId;
 
     @Column(nullable = false, unique = true)
     @NotBlank(message = "Email is required")

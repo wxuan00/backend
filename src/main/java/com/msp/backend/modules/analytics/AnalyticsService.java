@@ -12,6 +12,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
@@ -561,9 +562,9 @@ public class AnalyticsService {
         List<Settlement> settlements = settlementService.getAllSettlements();
         List<Map<String, Object>> insights = aiEngine.generateInsights(transactions, merchants, settlements);
         // Enrich with Python model interpretations
-        aiEngine.analyzeCustomerSegments(getRfmSegments(null), insights);
-        aiEngine.analyzeChurnRisk(getChurnRisk(null, 90), insights);
-        aiEngine.analyzeCashFlowForecast(getCashFlowForecast(null, 30), insights);
+        aiEngine.analyzeCustomerSegments(getRfmSegments(null, null, null), insights);
+        aiEngine.analyzeChurnRisk(getChurnRisk(null, 90, null, null), insights);
+        aiEngine.analyzeCashFlowForecast(getCashFlowForecast(null, 30, null, null), insights);
         return insights;
     }
 
@@ -572,9 +573,9 @@ public class AnalyticsService {
         List<Settlement> settlements = settlementService.getSettlementsByMerchantId(merchantId);
         List<Map<String, Object>> insights = aiEngine.generateMerchantInsights(transactions, settlements);
         // Enrich with Python model interpretations scoped to this merchant
-        aiEngine.analyzeCustomerSegments(getRfmSegments(merchantId), insights);
-        aiEngine.analyzeChurnRisk(getChurnRisk(merchantId, 90), insights);
-        aiEngine.analyzeCashFlowForecast(getCashFlowForecast(merchantId, 30), insights);
+        aiEngine.analyzeCustomerSegments(getRfmSegments(merchantId, null, null), insights);
+        aiEngine.analyzeChurnRisk(getChurnRisk(merchantId, 90, null, null), insights);
+        aiEngine.analyzeCashFlowForecast(getCashFlowForecast(merchantId, 30, null, null), insights);
         return insights;
     }
 
@@ -593,8 +594,8 @@ public class AnalyticsService {
      * Call the Python sidecar's /rfm endpoint and return the result.
      * @param merchantId optional — null means fleet-wide
      */
-    public Map<String, Object> getRfmSegments(Long merchantId) {
-        return callSidecar("/rfm", merchantId, null, null);
+    public Map<String, Object> getRfmSegments(Long merchantId, String startDate, String endDate) {
+        return callSidecar("/rfm", merchantId, null, null, startDate, endDate);
     }
 
     /**
@@ -602,8 +603,8 @@ public class AnalyticsService {
      * @param merchantId optional — null means fleet-wide
      * @param churnDays  days of inactivity that define churn (default 90)
      */
-    public Map<String, Object> getChurnRisk(Long merchantId, Integer churnDays) {
-        return callSidecar("/churn", merchantId, churnDays, null);
+    public Map<String, Object> getChurnRisk(Long merchantId, Integer churnDays, String startDate, String endDate) {
+        return callSidecar("/churn", merchantId, churnDays, null, startDate, endDate);
     }
 
     /**
@@ -611,20 +612,36 @@ public class AnalyticsService {
      * @param merchantId   optional — null means fleet-wide
      * @param horizonDays  how many days ahead to forecast (default 30)
      */
-    public Map<String, Object> getCashFlowForecast(Long merchantId, Integer horizonDays) {
-        return callSidecar("/forecast", merchantId, null, horizonDays);
+    public Map<String, Object> getCashFlowForecast(Long merchantId, Integer horizonDays, String startDate, String endDate) {
+        return callSidecar("/forecast", merchantId, null, horizonDays, startDate, endDate);
     }
 
     @SuppressWarnings("unchecked")
-    private Map<String, Object> callSidecar(String path, Long merchantId, Integer churnDays, Integer horizonDays) {
+    private Map<String, Object> callSidecar(String path, Long merchantId, Integer churnDays, Integer horizonDays,
+                                             String startDate, String endDate) {
         try {
             UriComponentsBuilder builder = UriComponentsBuilder
                     .fromUriString(SIDECAR_URL + path);
             if (merchantId != null) builder.queryParam("merchant_id", merchantId);
             if (churnDays != null)  builder.queryParam("churn_days", churnDays);
             if (horizonDays != null) builder.queryParam("horizon_days", horizonDays);
+            if (startDate != null && !startDate.isBlank()) builder.queryParam("start_date", startDate);
+            if (endDate != null && !endDate.isBlank())     builder.queryParam("end_date", endDate);
 
             return restTemplate.getForObject(builder.toUriString(), Map.class);
+        } catch (org.springframework.web.client.RestClientResponseException ex) {
+            // Python returned any HTTP error (4xx or 5xx) — extract FastAPI "detail" from body
+            log.warn("Python sidecar {} returned {}: {}", path, ex.getStatusCode(), ex.getResponseBodyAsString());
+            String detail = ex.getResponseBodyAsString();
+            try {
+                com.fasterxml.jackson.databind.ObjectMapper om = new com.fasterxml.jackson.databind.ObjectMapper();
+                Map<?, ?> body = om.readValue(detail, Map.class);
+                Object d = body.get("detail");
+                if (d != null) detail = d.toString();
+            } catch (Exception ignored) {}
+            Map<String, Object> error = new LinkedHashMap<>();
+            error.put("error", detail);
+            return error;
         } catch (Exception ex) {
             log.error("Python sidecar call to {} failed: {}", path, ex.getMessage());
             Map<String, Object> error = new LinkedHashMap<>();

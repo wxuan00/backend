@@ -37,7 +37,7 @@ public class UserController {
 
     // GET single user by ID
     @GetMapping("/{id}")
-    public ResponseEntity<User> getUserById(@PathVariable Long id) {
+    public ResponseEntity<User> getUserById(@PathVariable String id) {
         User user = userService.getUserById(id);
         user.setPassword(null);
         return ResponseEntity.ok(user);
@@ -45,7 +45,7 @@ public class UserController {
 
     // GET user with role + permissions details
     @GetMapping("/{id}/details")
-    public ResponseEntity<Map<String, Object>> getUserDetails(@PathVariable Long id) {
+    public ResponseEntity<Map<String, Object>> getUserDetails(@PathVariable String id) {
         User user = userService.getUserById(id);
         user.setPassword(null);
 
@@ -104,7 +104,7 @@ public class UserController {
 
     // UPDATE user
     @PutMapping("/{id}")
-    public ResponseEntity<User> updateUser(@PathVariable Long id, @RequestBody Map<String, String> body) {
+    public ResponseEntity<User> updateUser(@PathVariable String id, @RequestBody Map<String, String> body) {
         User user = new User();
         user.setFirstName(body.get("firstName"));
         user.setLastName(body.get("lastName"));
@@ -118,7 +118,7 @@ public class UserController {
 
     // 2. DELETE ENDPOINT
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteUser(@PathVariable Long id) {
+    public ResponseEntity<Void> deleteUser(@PathVariable String id) {
         userService.deleteUser(id);
         return ResponseEntity.noContent().build();
     }
@@ -126,7 +126,7 @@ public class UserController {
     // Sync all assigned roles for a user (replaces existing set, but always preserves ADMIN/MERCHANT system role)
     @Transactional
     @PutMapping("/{id}/roles")
-    public ResponseEntity<Void> syncRoles(@PathVariable Long id, @RequestBody java.util.List<Long> roleIds) {
+    public ResponseEntity<Void> syncRoles(@PathVariable String id, @RequestBody java.util.List<Long> roleIds) {
         String actor = AuditHelper.currentUser();
 
         // Collect system role IDs that must be preserved (ADMIN / MERCHANT)
@@ -174,7 +174,7 @@ public class UserController {
 
     // Unassign a single role from user
     @DeleteMapping("/{id}/roles/{roleId}")
-    public ResponseEntity<Void> unassignRole(@PathVariable Long id, @PathVariable Long roleId) {
+    public ResponseEntity<Void> unassignRole(@PathVariable String id, @PathVariable Long roleId) {
         userRoleRepository.findByUserId(id).stream()
             .filter(ur -> ur.getRoleId().equals(roleId))
             .forEach(ur -> userRoleRepository.delete(ur));
@@ -183,7 +183,7 @@ public class UserController {
 
     // Reset user password (admin action)
     @PatchMapping("/{id}/password")
-    public ResponseEntity<Void> resetPassword(@PathVariable Long id, @RequestBody Map<String, String> body) {
+    public ResponseEntity<Void> resetPassword(@PathVariable String id, @RequestBody Map<String, String> body) {
         String newPassword = body.get("newPassword");
         if (newPassword == null || newPassword.isBlank()) {
             return ResponseEntity.badRequest().build();

@@ -21,6 +21,7 @@ public class UserService {
     private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
     private final EntityManager entityManager;
+    private final UserIdGenerator userIdGenerator;
 
     public List<User> getAllUsers() {
         List<User> users = userRepository.findByDeletedAtIsNull();
@@ -28,7 +29,7 @@ public class UserService {
         return users;
     }
 
-    public User getUserById(Long id) {
+    public User getUserById(String id) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("User not found"));
         populateRole(user);
@@ -54,6 +55,7 @@ public class UserService {
         user.setLastModifiedBy(AuditHelper.currentUser());
         user.setMustChangePassword(true); // force password change on first login
         user.setRole(null);
+        user.setUserId(userIdGenerator.generate());
         User saved = userRepository.save(user);
 
         assignRole(saved.getUserId(), roleName, "SYSTEM");
@@ -62,7 +64,7 @@ public class UserService {
     }
 
     @Transactional
-    public void deleteUser(Long id) {
+    public void deleteUser(String id) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("User not found"));
         populateRole(user);
@@ -86,7 +88,7 @@ public class UserService {
     }
 
     @Transactional
-    public User updateUser(Long id, User updated) {
+    public User updateUser(String id, User updated) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
@@ -137,7 +139,7 @@ public class UserService {
         }
     }
 
-    private void assignRole(Long userId, String roleName, String generatedBy) {
+    private void assignRole(String userId, String roleName, String generatedBy) {
         Role role = roleRepository.findByRoleName(roleName)
                 .orElseThrow(() -> new RuntimeException("Role not found: " + roleName));
         UserRole userRole = new UserRole();
@@ -148,7 +150,7 @@ public class UserService {
     }
 
     @Transactional
-    public void resetPassword(Long id, String newPassword) {
+    public void resetPassword(String id, String newPassword) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("User not found"));
         user.setPassword(passwordEncoder.encode(newPassword));

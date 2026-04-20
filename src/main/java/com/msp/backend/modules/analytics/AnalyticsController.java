@@ -140,10 +140,12 @@ public class AnalyticsController {
      * Admin sees fleet-wide; merchant sees own data.
      */
     @GetMapping("/rfm")
-    public Map<String, Object> getRfmSegments() {
+    public Map<String, Object> getRfmSegments(
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate) {
         User currentUser = getCurrentUser();
         Long merchantId = "ADMIN".equals(currentUser.getRole()) ? null : getMyMerchantId(currentUser);
-        return analyticsService.getRfmSegments(merchantId);
+        return analyticsService.getRfmSegments(merchantId, startDate, endDate);
     }
 
     /**
@@ -152,10 +154,12 @@ public class AnalyticsController {
      */
     @GetMapping("/churn")
     public Map<String, Object> getChurnRisk(
-            @RequestParam(defaultValue = "90") int churnDays) {
+            @RequestParam(defaultValue = "90") int churnDays,
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate) {
         User currentUser = getCurrentUser();
         Long merchantId = "ADMIN".equals(currentUser.getRole()) ? null : getMyMerchantId(currentUser);
-        return analyticsService.getChurnRisk(merchantId, churnDays);
+        return analyticsService.getChurnRisk(merchantId, churnDays, startDate, endDate);
     }
 
     /**
@@ -164,10 +168,12 @@ public class AnalyticsController {
      */
     @GetMapping("/forecast")
     public Map<String, Object> getCashFlowForecast(
-            @RequestParam(defaultValue = "30") int horizonDays) {
+            @RequestParam(defaultValue = "30") int horizonDays,
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate) {
         User currentUser = getCurrentUser();
         Long merchantId = "ADMIN".equals(currentUser.getRole()) ? null : getMyMerchantId(currentUser);
-        return analyticsService.getCashFlowForecast(merchantId, horizonDays);
+        return analyticsService.getCashFlowForecast(merchantId, horizonDays, startDate, endDate);
     }
 
     // ===== Helpers =====

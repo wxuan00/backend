@@ -5,6 +5,6 @@ import lombok.Data;
 
 @Data
 public class UserRoleId implements Serializable {
-    private Long userId;
+    private String userId;
     private Long roleId;
 }

@@ -17,9 +17,13 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/reports")
@@ -34,16 +38,59 @@ public class ReportController {
     private final FileGeneratorService fileGeneratorService;
 
     @GetMapping("/summary")
-    public ResponseEntity<Map<String, Object>> getSummaryReport() {
+    public ResponseEntity<Map<String, Object>> getSummaryReport(
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate) {
         User currentUser = getCurrentUser();
-        Map<String, Object> report = buildSummaryReport(currentUser);
+        Map<String, Object> report = buildSummaryReport(currentUser, startDate, endDate);
         return ResponseEntity.ok(report);
     }
 
-    private Map<String, Object> buildSummaryReport(User currentUser) {
+    // ── Date filter helpers ──────────────────────────────────────
+    private List<Transaction> filterByDateRange(List<Transaction> txns, String startDate, String endDate) {
+        if (startDate == null && endDate == null) return txns;
+        LocalDateTime from = startDate != null && !startDate.isBlank()
+                ? LocalDate.parse(startDate).atStartOfDay() : LocalDateTime.MIN;
+        LocalDateTime to = endDate != null && !endDate.isBlank()
+                ? LocalDate.parse(endDate).atTime(LocalTime.MAX) : LocalDateTime.MAX;
+        return txns.stream()
+                .filter(t -> t.getTxnDate() != null
+                        && !t.getTxnDate().isBefore(from)
+                        && !t.getTxnDate().isAfter(to))
+                .collect(Collectors.toList());
+    }
+
+    private List<Settlement> filterSettlementsByDateRange(List<Settlement> settlements, String startDate, String endDate) {
+        if (startDate == null && endDate == null) return settlements;
+        LocalDateTime from = startDate != null && !startDate.isBlank()
+                ? LocalDate.parse(startDate).atStartOfDay() : LocalDateTime.MIN;
+        LocalDateTime to = endDate != null && !endDate.isBlank()
+                ? LocalDate.parse(endDate).atTime(LocalTime.MAX) : LocalDateTime.MAX;
+        return settlements.stream()
+                .filter(s -> s.getSettlementDate() != null
+                        && !s.getSettlementDate().isBefore(from)
+                        && !s.getSettlementDate().isAfter(to))
+                .collect(Collectors.toList());
+    }
+
+    private String buildFilename(String base, String startDate, String endDate, String ext) {
+        if (startDate != null && endDate != null) {
+            return base + "_" + startDate + "_to_" + endDate + "." + ext;
+        } else if (startDate != null) {
+            return base + "_from_" + startDate + "." + ext;
+        } else if (endDate != null) {
+            return base + "_until_" + endDate + "." + ext;
+        }
+        return base + "." + ext;
+    }
+    // ────────────────────────────────────────────────────────────
+
+    private Map<String, Object> buildSummaryReport(User currentUser, String startDate, String endDate) {
         Map<String, Object> report = new HashMap<>();
         report.put("generatedBy", currentUser.getEmail());
         report.put("generatedAt", java.time.LocalDateTime.now().toString());
+        if (startDate != null && !startDate.isBlank()) report.put("dateFrom", startDate);
+        if (endDate != null && !endDate.isBlank()) report.put("dateTo", endDate);
 
         if ("ADMIN".equals(currentUser.getRole())) {
             report.put("type", "ADMIN_SUMMARY");
@@ -55,13 +102,13 @@ public class ReportController {
             report.put("pendingMerchants", merchants.stream().filter(m -> "PENDING".equals(m.getStatus())).count());
             report.put("suspendedMerchants", merchants.stream().filter(m -> "SUSPENDED".equals(m.getStatus())).count());
 
-            var transactions = transactionService.getAllTransactions();
+            var transactions = filterByDateRange(transactionService.getAllTransactions(), startDate, endDate);
             report.put("totalTransactions", transactions.size());
             report.put("approvedTransactions", transactions.stream().filter(t -> "APPROVED".equals(t.getStatus())).count());
             report.put("pendingTransactions", transactions.stream().filter(t -> "PENDING".equals(t.getStatus())).count());
             report.put("declinedTransactions", transactions.stream().filter(t -> "DECLINED".equals(t.getStatus())).count());
 
-            report.put("totalSettlements", settlementService.getAllSettlements().size());
+            report.put("totalSettlements", filterSettlementsByDateRange(settlementService.getAllSettlements(), startDate, endDate).size());
         } else {
             report.put("type", "MERCHANT_SUMMARY");
             Long merchantId = getMyMerchantId(currentUser);
@@ -70,13 +117,13 @@ public class ReportController {
                 report.put("merchantName", merchant.map(Merchant::getMerchantName).orElse("Unknown"));
                 report.put("merchantStatus", merchant.map(Merchant::getStatus).orElse("Unknown"));
 
-                var transactions = transactionService.getTransactionsByMerchantId(merchantId);
+                var transactions = filterByDateRange(transactionService.getTransactionsByMerchantId(merchantId), startDate, endDate);
                 report.put("totalTransactions", transactions.size());
                 report.put("approvedTransactions", transactions.stream().filter(t -> "APPROVED".equals(t.getStatus())).count());
                 report.put("pendingTransactions", transactions.stream().filter(t -> "PENDING".equals(t.getStatus())).count());
                 report.put("declinedTransactions", transactions.stream().filter(t -> "DECLINED".equals(t.getStatus())).count());
 
-                var settlements = settlementService.getSettlementsByMerchantId(merchantId);
+                var settlements = filterSettlementsByDateRange(settlementService.getSettlementsByMerchantId(merchantId), startDate, endDate);
                 report.put("totalSettlements", settlements.size());
             }
         }
@@ -85,19 +132,24 @@ public class ReportController {
     }
 
     @GetMapping("/summary/export")
-    public ResponseEntity<byte[]> exportSummaryReport() {
+    public ResponseEntity<byte[]> exportSummaryReport(
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate) {
         User currentUser = getCurrentUser();
-        Map<String, Object> report = buildSummaryReport(currentUser);
+        Map<String, Object> report = buildSummaryReport(currentUser, startDate, endDate);
         byte[] csv = fileGeneratorService.generateSummaryReportCsv(report);
 
+        String filename = buildFilename("summary-report", startDate, endDate, "csv");
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=summary-report.csv")
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + filename)
                 .contentType(MediaType.parseMediaType("text/csv"))
                 .body(csv);
     }
 
     @GetMapping("/transactions/export")
-    public ResponseEntity<byte[]> exportTransactions() {
+    public ResponseEntity<byte[]> exportTransactions(
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate) {
         User currentUser = getCurrentUser();
         List<Transaction> transactions;
         if ("ADMIN".equals(currentUser.getRole())) {
@@ -108,16 +160,20 @@ public class ReportController {
                     ? transactionService.getTransactionsByMerchantId(merchantId)
                     : List.of();
         }
+        transactions = filterByDateRange(transactions, startDate, endDate);
         byte[] csv = fileGeneratorService.generateTransactionsCsv(transactions);
 
+        String filename = buildFilename("transactions-export", startDate, endDate, "csv");
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=transactions-export.csv")
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + filename)
                 .contentType(MediaType.parseMediaType("text/csv"))
                 .body(csv);
     }
 
     @GetMapping("/settlements/export")
-    public ResponseEntity<byte[]> exportSettlements() {
+    public ResponseEntity<byte[]> exportSettlements(
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate) {
         User currentUser = getCurrentUser();
         List<Settlement> settlements;
         if ("ADMIN".equals(currentUser.getRole())) {
@@ -128,10 +184,12 @@ public class ReportController {
                     ? settlementService.getSettlementsByMerchantId(merchantId)
                     : List.of();
         }
+        settlements = filterSettlementsByDateRange(settlements, startDate, endDate);
         byte[] csv = fileGeneratorService.generateSettlementsCsv(settlements);
 
+        String filename = buildFilename("settlements-export", startDate, endDate, "csv");
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=settlements-export.csv")
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + filename)
                 .contentType(MediaType.parseMediaType("text/csv"))
                 .body(csv);
     }

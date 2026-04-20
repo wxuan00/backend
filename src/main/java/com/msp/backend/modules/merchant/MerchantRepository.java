@@ -8,5 +8,5 @@ public interface MerchantRepository extends JpaRepository<Merchant, Long> {
 
     List<Merchant> findByMerchantNameContainingIgnoreCase(String name);
 
-    Optional<Merchant> findByUserId(Long userId);
+    Optional<Merchant> findByUserId(String userId);
 }

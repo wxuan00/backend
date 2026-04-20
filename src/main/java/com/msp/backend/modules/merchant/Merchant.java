@@ -16,7 +16,7 @@ public class Merchant {
     private Long merchantId;
 
     @Column(name = "user_id")
-    private Long userId; // FK to users table
+    private String userId; // FK to users table
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", insertable = false, updatable = false)

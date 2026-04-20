@@ -59,6 +59,7 @@ public class DataSeeder implements CommandLineRunner {
     private final AnalyticsRepository analyticsRepository;
     private final PasswordEncoder passwordEncoder;
     private final ObjectMapper objectMapper;
+    private final com.msp.backend.modules.user.UserIdGenerator userIdGenerator;
 
     private final Random random = new Random();
 
@@ -241,6 +242,7 @@ public class DataSeeder implements CommandLineRunner {
             u.setMfaEnabled(d.get("mfaEnabled").booleanValue());
             u.setMustChangePassword(d.get("mustChangePassword").booleanValue());
 
+            u.setUserId(userIdGenerator.generate());
             User saved = userRepository.save(u);
             users.add(saved);
 
@@ -291,8 +293,8 @@ public class DataSeeder implements CommandLineRunner {
         // XGBoost churn, Prophet forecasting, and RFM segmentation have enough
         // date-range diversity to train properly.
         LocalDateTime now = LocalDateTime.now();
-        int daysSpread = 180;   // 6 months of history
-        int repeats    = 6;     // multiply data volume ×6 (~1500 txns)
+        int daysSpread = 730;   // 2 years of history
+        int repeats    = 12;    // multiply data volume ×12 (~3000 txns)
 
         // Cards that will appear ONLY >90 days ago (simulate churned customers)
         java.util.Set<String> churnedCards = java.util.Set.of(
@@ -344,11 +346,14 @@ public class DataSeeder implements CommandLineRunner {
                 // Determine date range based on card behaviour
                 int daysAgo;
                 if (churnedCards.contains(cardNo)) {
-                    daysAgo = 91 + random.nextInt(daysSpread - 91); // only old (>90 days)
+                    daysAgo = 91 + random.nextInt(daysSpread - 91); // only old (>90 days), up to 2 years
                 } else if (newCards.contains(cardNo)) {
                     daysAgo = random.nextInt(60);                   // only recent (<60 days)
                 } else {
-                    daysAgo = random.nextInt(daysSpread);           // full range
+                    // spread evenly across full 2-year window; bias 75% to >90 days for churn model
+                    daysAgo = random.nextDouble() < 0.75
+                            ? 91 + random.nextInt(daysSpread - 91)  // historical (>90 days)
+                            : random.nextInt(90);                   // recent (≤90 days)
                 }
                 int hour    = 7 + random.nextInt(13); // 07:00 – 19:59
                 int minute  = random.nextInt(60);
@@ -366,6 +371,114 @@ public class DataSeeder implements CommandLineRunner {
 
         log.info("Created {} transactions ({}× base data spread over {} days)",
                 allTransactions.size(), repeats, daysSpread);
+
+        // ── Synthetic transactions: 500 unique cards × 2 years ──────────────
+        // Creates 4 customer archetypes to give the churn model realistic variety:
+        //   A. Loyal (35%) — high frequency, low recency, appears in both windows
+        //   B. Churned (30%) — was active historically, disappeared in last 90 days
+        //   C. At-Risk (20%) — declining frequency, sporadic recent activity
+        //   D. New (15%) — only recent transactions, no historical data
+        log.info("Seeding synthetic transactions for AI model diversity...");
+        String[] syntheticDescs = {
+            "ONLINE PURCHASE", "RETAIL PAYMENT", "SUBSCRIPTION FEE",
+            "FOOD & BEVERAGE", "TRANSPORT", "UTILITY BILL", "ENTERTAINMENT",
+            "GROCERY", "FASHION", "ELECTRONICS"
+        };
+        int synthSeq = 900000;
+
+        for (int c = 1; c <= 500; c++) {
+            String syntheticCard = String.format("9%015d", c);
+            Merchant merchant = merchants.get(c % merchants.size());
+            double archetype = random.nextDouble();
+
+            int perCard;
+            boolean historicalOnly;  // true = churned customer (no recent txns)
+            boolean recentOnly;      // true = new customer (no historical txns)
+            double avgAmount;
+            int minDaysAgo, maxDaysAgo;
+
+            if (archetype < 0.35) {
+                // ── A. Loyal customer: many transactions across full 2 years ──
+                perCard = 15 + random.nextInt(25);  // 15-39 txns
+                avgAmount = 50 + random.nextDouble() * 400;
+                historicalOnly = false;
+                recentOnly = false;
+                minDaysAgo = 0;
+                maxDaysAgo = 730;
+            } else if (archetype < 0.65) {
+                // ── B. Churned customer: ONLY historical (>90 days ago) ──
+                perCard = 3 + random.nextInt(12);   // 3-14 txns
+                avgAmount = 20 + random.nextDouble() * 200;
+                historicalOnly = true;
+                recentOnly = false;
+                minDaysAgo = 91;
+                maxDaysAgo = 730;
+            } else if (archetype < 0.85) {
+                // ── C. At-risk: mostly historical, maybe 1-2 recent ──
+                perCard = 5 + random.nextInt(10);   // 5-14 txns
+                avgAmount = 30 + random.nextDouble() * 300;
+                historicalOnly = false;
+                recentOnly = false;
+                minDaysAgo = 0;
+                maxDaysAgo = 730;
+            } else {
+                // ── D. New customer: recent only (<90 days) ──
+                perCard = 2 + random.nextInt(6);    // 2-7 txns
+                avgAmount = 30 + random.nextDouble() * 350;
+                historicalOnly = false;
+                recentOnly = true;
+                minDaysAgo = 0;
+                maxDaysAgo = 89;
+            }
+
+            for (int t = 0; t < perCard; t++) {
+                Transaction tx = new Transaction();
+                tx.setMerchantId(merchant.getMerchantId());
+                tx.setRefNo(String.valueOf(synthSeq++));
+                tx.setCardNo(syntheticCard);
+                tx.setTxnDescription(syntheticDescs[random.nextInt(syntheticDescs.length)]);
+
+                // Vary amounts: ±50% from archetype avg for realistic spread
+                double factor = 0.50 + random.nextDouble() * 1.00;
+                tx.setAmount(BigDecimal.valueOf(avgAmount * factor)
+                        .setScale(2, RoundingMode.HALF_UP));
+                tx.setDiscountAmount(BigDecimal.ZERO);
+                tx.setNettAmount(tx.getAmount());
+                tx.setCurrency(currencies[random.nextInt(currencies.length)]);
+                tx.setPaymentChannel(extraChannels[random.nextInt(extraChannels.length)]);
+                // 90% APPROVED, 5% DECLINED, 5% REFUNDED
+                double statusRoll = random.nextDouble();
+                tx.setStatus(statusRoll < 0.90 ? "APPROVED" : statusRoll < 0.95 ? "DECLINED" : "REFUNDED");
+
+                int daysAgo;
+                if (historicalOnly) {
+                    // Only old transactions (churned)
+                    daysAgo = minDaysAgo + random.nextInt(maxDaysAgo - minDaysAgo + 1);
+                } else if (recentOnly) {
+                    // Only recent transactions (new customer)
+                    daysAgo = random.nextInt(maxDaysAgo + 1);
+                } else if (archetype >= 0.65 && archetype < 0.85) {
+                    // At-risk: 85% historical, 15% recent
+                    daysAgo = random.nextDouble() < 0.85
+                            ? 91 + random.nextInt(639)
+                            : random.nextInt(90);
+                } else {
+                    // Loyal: spread evenly across full range
+                    daysAgo = random.nextInt(maxDaysAgo + 1);
+                }
+
+                int hour   = 7 + random.nextInt(13);
+                int minute = random.nextInt(60);
+                LocalDateTime txnDate = now.minusDays(daysAgo)
+                        .withHour(hour).withMinute(minute).withSecond(0).withNano(0);
+                tx.setTxnDate(txnDate);
+                if ("APPROVED".equals(tx.getStatus())) {
+                    tx.setPostedDate(txnDate.plusDays(1 + random.nextInt(3)));
+                }
+                allTransactions.add(transactionRepository.save(tx));
+            }
+        }
+        log.info("Total transactions after synthetic generation: {}", allTransactions.size());
         return allTransactions;
     }
 
