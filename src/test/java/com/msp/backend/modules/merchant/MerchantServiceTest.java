@@ -40,13 +40,11 @@ class MerchantServiceTest {
         sampleMerchant.setPostcode("55100");
         sampleMerchant.setCountry("Malaysia");
         sampleMerchant.setStatus("ACTIVE");
-        sampleMerchant.setUserId("20240101000001");
 
         sampleMerchant2 = new Merchant();
         sampleMerchant2.setMerchantId(2L);
         sampleMerchant2.setMerchantName("Food Corner");
         sampleMerchant2.setStatus("PENDING");
-        sampleMerchant2.setUserId("20240101000002");
     }
 
     // ─── getAllMerchants ──────────────────────────────────────────────────────────
@@ -124,7 +122,6 @@ class MerchantServiceTest {
         updates.setCity("Kuala Lumpur");
         updates.setCountry("Malaysia");
         updates.setStatus("SUSPENDED");
-        updates.setUserId("20240101000099");
 
         when(merchantRepository.findById(1L)).thenReturn(Optional.of(sampleMerchant));
         when(merchantRepository.save(any(Merchant.class))).thenAnswer(inv -> inv.getArgument(0));

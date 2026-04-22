@@ -40,7 +40,7 @@ class AuthServiceTest {
     @BeforeEach
     void setUp() {
         activeUser = new User();
-        activeUser.setUserId("20240101000001");
+        activeUser.setUserId(1L);
         activeUser.setEmail("user@test.com");
         activeUser.setPassword("hashedPassword");
         activeUser.setFirstName("John");
@@ -53,12 +53,12 @@ class AuthServiceTest {
         loginRequest.setPassword("password123");
     }
 
-    // ─── login ───────────────────────────────────────────────────────────────
+    // ─── login ────────────────────────────────────────────────────────────────
 
     @Test
     @DisplayName("login: success returns token and role")
     void login_success() {
-        when(userRepository.findByEmail("user@test.com")).thenReturn(Optional.of(activeUser));
+        when(userRepository.findByEmailAndDeletedAtIsNull("user@test.com")).thenReturn(Optional.of(activeUser));
         when(passwordEncoder.matches("password123", "hashedPassword")).thenReturn(true);
         doNothing().when(userService).populateRole(activeUser);
         when(jwtService.generateToken("user@test.com", "MERCHANT")).thenReturn("jwt-token");
@@ -82,18 +82,9 @@ class AuthServiceTest {
     @Test
     @DisplayName("login: user not found throws invalid credentials")
     void login_userNotFound_throws() {
-        when(userRepository.findByEmail("user@test.com")).thenReturn(Optional.empty());
-        when(userRepository.findByDisplayNameIgnoreCase("user@test.com")).thenReturn(Optional.empty());
-        assertThatThrownBy(() -> authService.login(loginRequest))
-                .isInstanceOf(RuntimeException.class)
-                .hasMessageContaining("Invalid credentials");
-    }
+        when(userRepository.findByEmailAndDeletedAtIsNull("user@test.com")).thenReturn(Optional.empty());
+        when(userRepository.findByDisplayNameIgnoreCaseAndDeletedAtIsNull("user@test.com")).thenReturn(Optional.empty());
 
-    @Test
-    @DisplayName("login: deleted user throws invalid credentials")
-    void login_deletedUser_throws() {
-        activeUser.setDeletedAt(LocalDateTime.now());
-        when(userRepository.findByEmail("user@test.com")).thenReturn(Optional.of(activeUser));
         assertThatThrownBy(() -> authService.login(loginRequest))
                 .isInstanceOf(RuntimeException.class)
                 .hasMessageContaining("Invalid credentials");
@@ -103,7 +94,8 @@ class AuthServiceTest {
     @DisplayName("login: INACTIVE user throws account inactive")
     void login_inactiveUser_throws() {
         activeUser.setStatus("INACTIVE");
-        when(userRepository.findByEmail("user@test.com")).thenReturn(Optional.of(activeUser));
+        when(userRepository.findByEmailAndDeletedAtIsNull("user@test.com")).thenReturn(Optional.of(activeUser));
+
         assertThatThrownBy(() -> authService.login(loginRequest))
                 .isInstanceOf(RuntimeException.class)
                 .hasMessageContaining("inactive");
@@ -113,7 +105,8 @@ class AuthServiceTest {
     @DisplayName("login: SUSPENDED user throws account suspended")
     void login_suspendedUser_throws() {
         activeUser.setStatus("SUSPENDED");
-        when(userRepository.findByEmail("user@test.com")).thenReturn(Optional.of(activeUser));
+        when(userRepository.findByEmailAndDeletedAtIsNull("user@test.com")).thenReturn(Optional.of(activeUser));
+
         assertThatThrownBy(() -> authService.login(loginRequest))
                 .isInstanceOf(RuntimeException.class)
                 .hasMessageContaining("suspended");
@@ -122,8 +115,9 @@ class AuthServiceTest {
     @Test
     @DisplayName("login: wrong password throws invalid credentials")
     void login_wrongPassword_throws() {
-        when(userRepository.findByEmail("user@test.com")).thenReturn(Optional.of(activeUser));
+        when(userRepository.findByEmailAndDeletedAtIsNull("user@test.com")).thenReturn(Optional.of(activeUser));
         when(passwordEncoder.matches("password123", "hashedPassword")).thenReturn(false);
+
         assertThatThrownBy(() -> authService.login(loginRequest))
                 .isInstanceOf(RuntimeException.class)
                 .hasMessageContaining("Invalid credentials");
@@ -133,9 +127,10 @@ class AuthServiceTest {
     @DisplayName("login: user with no role throws exception")
     void login_noRole_throws() {
         activeUser.setRole(null);
-        when(userRepository.findByEmail("user@test.com")).thenReturn(Optional.of(activeUser));
+        when(userRepository.findByEmailAndDeletedAtIsNull("user@test.com")).thenReturn(Optional.of(activeUser));
         when(passwordEncoder.matches("password123", "hashedPassword")).thenReturn(true);
         doNothing().when(userService).populateRole(activeUser);
+
         assertThatThrownBy(() -> authService.login(loginRequest))
                 .isInstanceOf(RuntimeException.class)
                 .hasMessageContaining("no role");
@@ -144,17 +139,19 @@ class AuthServiceTest {
     // ─── forgotPassword ───────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("forgotPassword: always returns success message")
-    void forgotPassword_alwaysReturnsMessage() {
-        when(userRepository.findByEmail("noone@test.com")).thenReturn(Optional.empty());
+    @DisplayName("forgotPassword: always returns success message even for unknown email")
+    void forgotPassword_unknownEmail_returnsMessage() {
+        when(userRepository.findByEmailAndDeletedAtIsNull("noone@test.com")).thenReturn(Optional.empty());
+
         Map<String, Object> result = authService.forgotPassword("noone@test.com");
+
         assertThat(result.get("message").toString()).contains("If that email");
     }
 
     @Test
-    @DisplayName("forgotPassword: valid user gets reset token")
+    @DisplayName("forgotPassword: valid active user gets reset token")
     void forgotPassword_validUser_setsToken() {
-        when(userRepository.findByEmail("user@test.com")).thenReturn(Optional.of(activeUser));
+        when(userRepository.findByEmailAndDeletedAtIsNull("user@test.com")).thenReturn(Optional.of(activeUser));
         when(userRepository.save(any())).thenReturn(activeUser);
 
         Map<String, Object> result = authService.forgotPassword("user@test.com");
@@ -164,11 +161,13 @@ class AuthServiceTest {
     }
 
     @Test
-    @DisplayName("forgotPassword: inactive user returns success but no token")
+    @DisplayName("forgotPassword: inactive user returns message but no token")
     void forgotPassword_inactiveUser_noToken() {
         activeUser.setStatus("INACTIVE");
-        when(userRepository.findByEmail("user@test.com")).thenReturn(Optional.of(activeUser));
+        when(userRepository.findByEmailAndDeletedAtIsNull("user@test.com")).thenReturn(Optional.of(activeUser));
+
         Map<String, Object> result = authService.forgotPassword("user@test.com");
+
         assertThat(result).doesNotContainKey("resetToken");
     }
 
@@ -196,15 +195,15 @@ class AuthServiceTest {
     }
 
     @Test
-    @DisplayName("resetPassword: valid token resets password")
+    @DisplayName("resetPassword: valid token resets password and clears token")
     void resetPassword_validToken_resetsPassword() {
         activeUser.setResetToken("valid-token");
         activeUser.setResetTokenExpiry(LocalDateTime.now().plusHours(1));
         when(userRepository.findByResetToken("valid-token")).thenReturn(Optional.of(activeUser));
-        doNothing().when(userService).resetPassword(anyString(), anyString());
+        doNothing().when(userService).resetPassword(anyLong(), anyString());
         when(userRepository.save(any())).thenReturn(activeUser);
 
         assertThatNoException().isThrownBy(() -> authService.resetPassword("valid-token", "newpass123"));
-        verify(userService).resetPassword("20240101000001", "newpass123");
+        verify(userService).resetPassword(1L, "newpass123");
     }
 }

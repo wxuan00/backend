@@ -1,8 +1,10 @@
 package com.msp.backend.modules.role;
 
 import com.msp.backend.modules.role.Role;
+import com.msp.backend.modules.role.RolePermissionRepository;
 import com.msp.backend.modules.role.RoleRepository;
 import com.msp.backend.modules.role.RoleService;
+import com.msp.backend.modules.user.UserRoleRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -24,6 +26,8 @@ import static org.mockito.Mockito.*;
 class RoleServiceTest {
 
     @Mock private RoleRepository roleRepository;
+    @Mock private RolePermissionRepository rolePermissionRepository;
+    @Mock private UserRoleRepository userRoleRepository;
 
     @InjectMocks
     private RoleService roleService;
@@ -146,6 +150,8 @@ class RoleServiceTest {
     @DisplayName("deleteRole: deletes non-system role")
     void deleteRole_success() {
         when(roleRepository.findById(3L)).thenReturn(Optional.of(customRole));
+        doNothing().when(rolePermissionRepository).deleteByRoleId(3L);
+        doNothing().when(userRoleRepository).deleteByRoleId(3L);
         doNothing().when(roleRepository).deleteById(3L);
 
         assertThatNoException().isThrownBy(() -> roleService.deleteRole(3L));

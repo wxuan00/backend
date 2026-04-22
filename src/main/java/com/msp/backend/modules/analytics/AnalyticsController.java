@@ -143,11 +143,17 @@ public class AnalyticsController {
      */
     @GetMapping("/rfm")
     public Map<String, Object> getRfmSegments(
+            @RequestParam(required = false) Long merchantId,
             @RequestParam(required = false) String startDate,
             @RequestParam(required = false) String endDate) {
         User currentUser = getCurrentUser();
-        Long merchantId = "ADMIN".equals(currentUser.getRole()) ? null : getMyMerchantId(currentUser);
-        return analyticsService.getRfmSegments(merchantId, startDate, endDate);
+        Long resolvedMerchantId;
+        if ("ADMIN".equals(currentUser.getRole())) {
+            resolvedMerchantId = merchantId; // null = fleet-wide, non-null = specific merchant
+        } else {
+            resolvedMerchantId = getMyMerchantId(currentUser);
+        }
+        return analyticsService.getRfmSegments(resolvedMerchantId, startDate, endDate);
     }
 
     /**
@@ -156,12 +162,18 @@ public class AnalyticsController {
      */
     @GetMapping("/churn")
     public Map<String, Object> getChurnRisk(
+            @RequestParam(required = false) Long merchantId,
             @RequestParam(defaultValue = "90") int churnDays,
             @RequestParam(required = false) String startDate,
             @RequestParam(required = false) String endDate) {
         User currentUser = getCurrentUser();
-        Long merchantId = "ADMIN".equals(currentUser.getRole()) ? null : getMyMerchantId(currentUser);
-        return analyticsService.getChurnRisk(merchantId, churnDays, startDate, endDate);
+        Long resolvedMerchantId;
+        if ("ADMIN".equals(currentUser.getRole())) {
+            resolvedMerchantId = merchantId;
+        } else {
+            resolvedMerchantId = getMyMerchantId(currentUser);
+        }
+        return analyticsService.getChurnRisk(resolvedMerchantId, churnDays, startDate, endDate);
     }
 
     /**
@@ -170,12 +182,18 @@ public class AnalyticsController {
      */
     @GetMapping("/forecast")
     public Map<String, Object> getCashFlowForecast(
+            @RequestParam(required = false) Long merchantId,
             @RequestParam(defaultValue = "30") int horizonDays,
             @RequestParam(required = false) String startDate,
             @RequestParam(required = false) String endDate) {
         User currentUser = getCurrentUser();
-        Long merchantId = "ADMIN".equals(currentUser.getRole()) ? null : getMyMerchantId(currentUser);
-        return analyticsService.getCashFlowForecast(merchantId, horizonDays, startDate, endDate);
+        Long resolvedMerchantId;
+        if ("ADMIN".equals(currentUser.getRole())) {
+            resolvedMerchantId = merchantId;
+        } else {
+            resolvedMerchantId = getMyMerchantId(currentUser);
+        }
+        return analyticsService.getCashFlowForecast(resolvedMerchantId, horizonDays, startDate, endDate);
     }
 
     // ===== Helpers =====
