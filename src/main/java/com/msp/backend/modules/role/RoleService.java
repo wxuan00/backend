@@ -1,8 +1,10 @@
 package com.msp.backend.modules.role;
 
+import com.msp.backend.modules.user.UserRoleRepository;
 import com.msp.backend.util.AuditHelper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 
 @Service
@@ -10,6 +12,8 @@ import java.util.List;
 public class RoleService {
 
     private final RoleRepository roleRepository;
+    private final RolePermissionRepository rolePermissionRepository;
+    private final UserRoleRepository userRoleRepository;
 
     public List<Role> getAllRoles() {
         return roleRepository.findAll();
@@ -39,11 +43,15 @@ public class RoleService {
         return roleRepository.save(role);
     }
 
+    @Transactional
     public void deleteRole(Long id) {
         Role role = getRoleById(id);
         if ("ADMIN".equals(role.getRoleName()) || "MERCHANT".equals(role.getRoleName())) {
             throw new RuntimeException("Cannot delete system role: " + role.getRoleName());
         }
+        // Remove FK-referencing rows first
+        rolePermissionRepository.deleteByRoleId(id);
+        userRoleRepository.deleteByRoleId(id);
         roleRepository.deleteById(id);
     }
 }

@@ -60,10 +60,10 @@ public class RefundService {
         }
         refund.setStatus("CANCELLED");
         Refund saved = refundRepository.save(refund);
-        // Revert the original transaction status back to APPROVED
+        // Mark the original transaction as refund-cancelled so history is preserved
         if (refund.getTransactionId() != null) {
             transactionRepository.findById(refund.getTransactionId()).ifPresent(txn -> {
-                txn.setStatus("APPROVED");
+                txn.setStatus("PENDING");
                 transactionRepository.save(txn);
             });
         }

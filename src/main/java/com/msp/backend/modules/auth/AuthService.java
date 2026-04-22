@@ -32,8 +32,8 @@ public class AuthService {
         }
 
         // Try email first, then display name
-        User user = userRepository.findByEmail(identifier)
-                .or(() -> userRepository.findByDisplayNameIgnoreCase(identifier))
+        User user = userRepository.findByEmailAndDeletedAtIsNull(identifier)
+                .or(() -> userRepository.findByDisplayNameIgnoreCaseAndDeletedAtIsNull(identifier))
                 .orElseThrow(() -> new RuntimeException("Invalid credentials"));
 
         if (user.getDeletedAt() != null) {
@@ -76,7 +76,7 @@ public class AuthService {
 
     @Transactional
     public Map<String, Object> forgotPassword(String email) {
-        User user = userRepository.findByEmail(email).orElse(null);
+        User user = userRepository.findByEmailAndDeletedAtIsNull(email).orElse(null);
 
         // Always return success to prevent email enumeration
         Map<String, Object> result = new HashMap<>();

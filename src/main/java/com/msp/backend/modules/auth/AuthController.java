@@ -3,19 +3,29 @@ package com.msp.backend.modules.auth;
 
 import com.msp.backend.modules.auth.dto.LoginRequest;
 import com.msp.backend.modules.auth.dto.AuthResponse;
+import com.msp.backend.modules.role.Permission;
+import com.msp.backend.modules.role.PermissionRepository;
+import com.msp.backend.modules.role.Role;
+import com.msp.backend.modules.role.RolePermission;
+import com.msp.backend.modules.role.RolePermissionRepository;
+import com.msp.backend.modules.role.RoleRepository;
 import com.msp.backend.modules.user.User;
 import com.msp.backend.modules.user.UserRepository;
+import com.msp.backend.modules.user.UserRole;
+import com.msp.backend.modules.user.UserRoleRepository;
 import com.msp.backend.modules.user.UserService;
-import com.msp.backend.modules.merchant.Merchant;
-import com.msp.backend.modules.merchant.MerchantRepository;
+import com.msp.backend.util.MerchantResolver;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -25,8 +35,12 @@ public class AuthController {
     private final AuthService authService;
     private final UserRepository userRepository;
     private final UserService userService;
-    private final MerchantRepository merchantRepository;
+    private final MerchantResolver merchantResolver;
     private final TotpService totpService;
+    private final UserRoleRepository userRoleRepository;
+    private final RolePermissionRepository rolePermissionRepository;
+    private final PermissionRepository permissionRepository;
+    private final RoleRepository roleRepository;
 
     @PostMapping("/login")
     public ResponseEntity<Map<String, Object>> login(@RequestBody LoginRequest request) {
@@ -41,8 +55,8 @@ public class AuthController {
 
         // Resolve user by identifier (email or display name)
         String identifier = request.getIdentifier();
-        User user = userRepository.findByEmail(identifier)
-                .or(() -> userRepository.findByDisplayNameIgnoreCase(identifier))
+        User user = userRepository.findByEmailAndDeletedAtIsNull(identifier)
+                .or(() -> userRepository.findByDisplayNameIgnoreCaseAndDeletedAtIsNull(identifier))
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
         Map<String, Object> response = new HashMap<>();
@@ -63,7 +77,7 @@ public class AuthController {
     public Map<String, Object> getCurrentUser() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         String email = auth.getName();
-        User user = userRepository.findByEmail(email)
+        User user = userRepository.findByEmailAndDeletedAtIsNull(email)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
         Map<String, Object> userInfo = new HashMap<>();
@@ -76,11 +90,39 @@ public class AuthController {
         userInfo.put("role", user.getRole());
         userInfo.put("contactNumber", user.getContactNumber());
         userInfo.put("status", user.getStatus());
-        // Look up merchantId from merchants table (userId FK)
-        Merchant merchant = merchantRepository.findByUserId(user.getUserId()).orElse(null);
-        userInfo.put("merchantId", merchant != null ? merchant.getMerchantId() : null);
+        // Look up merchantId via both merchants.user_id and merchant_users mapping table
+        Long merchantId = merchantResolver.resolveForUser(user);
+        userInfo.put("merchantId", merchantId);
         userInfo.put("mfaEnabled", user.isMfaEnabled());
         userInfo.put("mustChangePassword", Boolean.TRUE.equals(user.getMustChangePassword()));
+
+        // Collect permissions:
+        // If user has custom BUSINESS roles (non-base), use ONLY those — they restrict base MERCHANT permissions.
+        // Otherwise use all assigned roles (covers ADMIN/SYSTEM users and bare MERCHANT users).
+        List<UserRole> userRoles = userRoleRepository.findByUserId(user.getUserId());
+
+        List<UserRole> customBusinessRoles = userRoles.stream()
+                .filter(ur -> roleRepository.findById(ur.getRoleId())
+                        .map(r -> "BUSINESS".equalsIgnoreCase(r.getRoleType())
+                                  && !"MERCHANT".equalsIgnoreCase(r.getRoleName()))
+                        .orElse(false))
+                .collect(Collectors.toList());
+
+        List<UserRole> rolesToUse = customBusinessRoles.isEmpty() ? userRoles : customBusinessRoles;
+
+        List<String> permissionNames = new ArrayList<>();
+        for (UserRole ur : rolesToUse) {
+            List<Long> permIds = rolePermissionRepository.findByRoleId(ur.getRoleId())
+                    .stream().map(RolePermission::getPermissionId).collect(Collectors.toList());
+            if (!permIds.isEmpty()) {
+                permissionRepository.findAllById(permIds).forEach(p -> {
+                    if (!permissionNames.contains(p.getPermissionName())) {
+                        permissionNames.add(p.getPermissionName());
+                    }
+                });
+            }
+        }
+        userInfo.put("permissions", permissionNames);
         return userInfo;
     }
 
@@ -88,7 +130,7 @@ public class AuthController {
     public ResponseEntity<?> clearMustChangePassword() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         String email = auth.getName();
-        User user = userRepository.findByEmail(email)
+        User user = userRepository.findByEmailAndDeletedAtIsNull(email)
                 .orElseThrow(() -> new RuntimeException("User not found"));
         user.setMustChangePassword(false);
         userRepository.save(user);
@@ -100,7 +142,7 @@ public class AuthController {
     public ResponseEntity<Map<String, Object>> verifyMfa(@RequestBody Map<String, String> request) {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         String email = auth.getName();
-        User user = userRepository.findByEmail(email)
+        User user = userRepository.findByEmailAndDeletedAtIsNull(email)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
         String otpCode = request.get("code");

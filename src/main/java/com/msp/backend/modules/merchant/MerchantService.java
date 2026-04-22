@@ -35,7 +35,6 @@ public class MerchantService {
         if (updated.getCity() != null) merchant.setCity(updated.getCity());
         if (updated.getCountry() != null) merchant.setCountry(updated.getCountry());
         if (updated.getStatus() != null) merchant.setStatus(updated.getStatus());
-        if (updated.getUserId() != null) merchant.setUserId(updated.getUserId());
 
         return merchantRepository.save(merchant);
     }

@@ -21,7 +21,7 @@ public class AuditHelper {
      */
     public static String resolveDisplayName(String email, UserRepository userRepository) {
         if (email == null || email.isBlank() || "SYSTEM".equals(email)) return email;
-        return userRepository.findByEmail(email)
+        return userRepository.findByEmailAndDeletedAtIsNull(email)
                 .map(u -> {
                     if (u.getDisplayName() != null && !u.getDisplayName().isBlank())
                         return u.getDisplayName();

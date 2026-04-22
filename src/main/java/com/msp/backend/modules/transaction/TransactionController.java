@@ -5,6 +5,7 @@ import com.msp.backend.modules.merchant.MerchantRepository;
 import com.msp.backend.modules.user.User;
 import com.msp.backend.modules.user.UserRepository;
 import com.msp.backend.modules.user.UserService;
+import com.msp.backend.util.MerchantResolver;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
@@ -22,6 +23,7 @@ public class TransactionController {
     private final UserRepository userRepository;
     private final UserService userService;
     private final MerchantRepository merchantRepository;
+    private final MerchantResolver merchantResolver;
 
     @GetMapping
     public Page<Transaction> getAllTransactions(
@@ -72,14 +74,12 @@ public class TransactionController {
     private User getCurrentUser() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         String email = auth.getName();
-        User user = userRepository.findByEmail(email).orElseThrow();
+        User user = userRepository.findByEmailAndDeletedAtIsNull(email).orElseThrow();
         userService.populateRole(user);
         return user;
     }
 
     private Long getMyMerchantId(User user) {
-        return merchantRepository.findByUserId(user.getUserId())
-                .map(Merchant::getMerchantId)
-                .orElse(null);
+        return merchantResolver.resolveForUser(user);
     }
 }

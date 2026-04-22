@@ -31,21 +31,84 @@ public class UserController {
 
     // GET http://localhost:8001/api/users
     @GetMapping
-    public List<User> getAllUsers() {
-        return userService.getAllUsers();
+    public List<Map<String, Object>> getAllUsers() {
+        List<User> users = userService.getAllUsers();
+        return users.stream().map(u -> {
+            // Determine userType: ADMIN if user has ANY role with roleType=SYSTEM, else MERCHANT
+            boolean isAdmin = userRoleRepository.findByUserId(u.getUserId()).stream()
+                    .anyMatch(ur -> roleRepository.findById(ur.getRoleId())
+                            .map(r -> "SYSTEM".equalsIgnoreCase(r.getRoleType())).orElse(false));
+            Map<String, Object> m = new java.util.LinkedHashMap<>();
+            m.put("userId", u.getUserId());
+            m.put("email", u.getEmail());
+            m.put("firstName", u.getFirstName());
+            m.put("lastName", u.getLastName());
+            m.put("displayName", u.getDisplayName());
+            m.put("contactNumber", u.getContactNumber());
+            m.put("status", u.getStatus());
+            m.put("role", u.getRole());
+            m.put("userType", isAdmin ? "ADMIN" : "MERCHANT");
+            m.put("mfaEnabled", u.isMfaEnabled());
+            m.put("createdAt", u.getCreatedAt() != null ? u.getCreatedAt().toString() : "");
+            m.put("lastLoginAt", u.getLastLoginAt() != null ? u.getLastLoginAt().toString() : null);
+            return m;
+        }).toList();
+    }
+
+    // Search users by name or email (for merchant user mapping)
+    @GetMapping("/search")
+    public List<java.util.Map<String, Object>> searchUsers(@RequestParam String q) {
+        String keyword = q.toLowerCase().trim();
+        return userRepository.findByDeletedAtIsNull().stream()
+            .filter(u -> {
+                String full = ((u.getFirstName() != null ? u.getFirstName() : "") + " "
+                        + (u.getLastName() != null ? u.getLastName() : "") + " "
+                        + (u.getEmail() != null ? u.getEmail() : "")).toLowerCase();
+                return full.contains(keyword);
+            })
+            .limit(10)
+            .map(u -> {
+                userService.populateRole(u);
+                java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
+                m.put("userId", u.getUserId());
+                m.put("email", u.getEmail());
+                m.put("firstName", u.getFirstName());
+                m.put("lastName", u.getLastName());
+                m.put("displayName", u.getDisplayName());
+                m.put("status", u.getStatus());
+                m.put("role", u.getRole());
+                return m;
+            })
+            .toList();
     }
 
     // GET single user by ID
     @GetMapping("/{id}")
-    public ResponseEntity<User> getUserById(@PathVariable String id) {
+    public ResponseEntity<User> getUserById(@PathVariable Long id) {
         User user = userService.getUserById(id);
         user.setPassword(null);
         return ResponseEntity.ok(user);
     }
 
+    // Check if a display name is already taken (used for inline validation)
+    @GetMapping("/check-display-name")
+    public ResponseEntity<Map<String, Object>> checkDisplayName(
+            @RequestParam String name,
+            @RequestParam(required = false) Long excludeId) {
+        boolean taken;
+        if (excludeId != null) {
+            taken = userRepository.existsByDisplayNameIgnoreCaseAndUserIdNotAndDeletedAtIsNull(name.trim(), excludeId);
+        } else {
+            taken = userRepository.existsByDisplayNameIgnoreCaseAndDeletedAtIsNull(name.trim());
+        }
+        Map<String, Object> result = new HashMap<>();
+        result.put("taken", taken);
+        return ResponseEntity.ok(result);
+    }
+
     // GET user with role + permissions details
     @GetMapping("/{id}/details")
-    public ResponseEntity<Map<String, Object>> getUserDetails(@PathVariable String id) {
+    public ResponseEntity<Map<String, Object>> getUserDetails(@PathVariable Long id) {
         User user = userService.getUserById(id);
         user.setPassword(null);
 
@@ -104,7 +167,7 @@ public class UserController {
 
     // UPDATE user
     @PutMapping("/{id}")
-    public ResponseEntity<User> updateUser(@PathVariable String id, @RequestBody Map<String, String> body) {
+    public ResponseEntity<User> updateUser(@PathVariable Long id, @RequestBody Map<String, String> body) {
         User user = new User();
         user.setFirstName(body.get("firstName"));
         user.setLastName(body.get("lastName"));
@@ -118,45 +181,21 @@ public class UserController {
 
     // 2. DELETE ENDPOINT
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteUser(@PathVariable String id) {
+    public ResponseEntity<Void> deleteUser(@PathVariable Long id) {
         userService.deleteUser(id);
         return ResponseEntity.noContent().build();
     }
 
-    // Sync all assigned roles for a user (replaces existing set, but always preserves ADMIN/MERCHANT system role)
+    // Sync all assigned roles for a user (replaces existing set with exactly the provided roles)
     @Transactional
     @PutMapping("/{id}/roles")
-    public ResponseEntity<Void> syncRoles(@PathVariable String id, @RequestBody java.util.List<Long> roleIds) {
+    public ResponseEntity<Void> syncRoles(@PathVariable Long id, @RequestBody java.util.List<Long> roleIds) {
         String actor = AuditHelper.currentUser();
 
-        // Collect system role IDs that must be preserved (ADMIN / MERCHANT)
-        java.util.Set<Long> systemRoleIds = new java.util.HashSet<>();
-        for (UserRole ur : userRoleRepository.findByUserId(id)) {
-            roleRepository.findById(ur.getRoleId()).ifPresent(r -> {
-                if ("ADMIN".equals(r.getRoleName()) || "MERCHANT".equals(r.getRoleName())) {
-                    systemRoleIds.add(r.getRoleId());
-                }
-            });
-        }
-
-        // Delete all current roles then re-insert
+        // Delete all current roles then re-insert exactly what was passed
         userRoleRepository.deleteByUserId(id);
 
         java.util.Set<Long> inserted = new java.util.HashSet<>();
-
-        // Always re-insert the preserved system role first
-        for (Long sysId : systemRoleIds) {
-            UserRole ur = new UserRole();
-            ur.setUserId(id);
-            ur.setRoleId(sysId);
-            ur.setGeneratedBy(actor);
-            ur.setLastModifiedBy(actor);
-            ur.setLastModifiedAt(java.time.LocalDateTime.now());
-            userRoleRepository.save(ur);
-            inserted.add(sysId);
-        }
-
-        // Then insert the requested custom roles (skip duplicates)
         for (Long roleId : roleIds) {
             if (roleId != null && !inserted.contains(roleId)) {
                 UserRole ur = new UserRole();
@@ -174,7 +213,7 @@ public class UserController {
 
     // Unassign a single role from user
     @DeleteMapping("/{id}/roles/{roleId}")
-    public ResponseEntity<Void> unassignRole(@PathVariable String id, @PathVariable Long roleId) {
+    public ResponseEntity<Void> unassignRole(@PathVariable Long id, @PathVariable Long roleId) {
         userRoleRepository.findByUserId(id).stream()
             .filter(ur -> ur.getRoleId().equals(roleId))
             .forEach(ur -> userRoleRepository.delete(ur));
@@ -183,7 +222,7 @@ public class UserController {
 
     // Reset user password (admin action)
     @PatchMapping("/{id}/password")
-    public ResponseEntity<Void> resetPassword(@PathVariable String id, @RequestBody Map<String, String> body) {
+    public ResponseEntity<Void> resetPassword(@PathVariable Long id, @RequestBody Map<String, String> body) {
         String newPassword = body.get("newPassword");
         if (newPassword == null || newPassword.isBlank()) {
             return ResponseEntity.badRequest().build();

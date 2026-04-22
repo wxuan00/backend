@@ -1,6 +1,5 @@
 package com.msp.backend.modules.merchant;
 
-import com.msp.backend.modules.user.User;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.*;
 import lombok.Data;
@@ -14,13 +13,6 @@ public class Merchant {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "merchant_id")
     private Long merchantId;
-
-    @Column(name = "user_id")
-    private String userId; // FK to users table
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", insertable = false, updatable = false)
-    private User user;
 
     @Column(name = "merchant_name", nullable = false)
     @NotBlank(message = "Merchant name is required")

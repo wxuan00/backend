@@ -5,6 +5,8 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import com.msp.backend.modules.merchant.Merchant;
 import com.msp.backend.modules.merchant.MerchantRepository;
+import com.msp.backend.modules.merchant.MerchantUserMapping;
+import com.msp.backend.modules.merchant.MerchantUserMappingRepository;
 import com.msp.backend.modules.analytics.Analytics;
 import com.msp.backend.modules.analytics.AnalyticsRepository;
 import com.msp.backend.modules.role.Permission;
@@ -52,6 +54,7 @@ public class DataSeeder implements CommandLineRunner {
     private final RolePermissionRepository rolePermissionRepository;
     private final UserRoleRepository userRoleRepository;
     private final MerchantRepository merchantRepository;
+    private final MerchantUserMappingRepository merchantUserMappingRepository;
     private final TransactionRepository transactionRepository;
     private final RefundRepository refundRepository;
     private final SettlementRepository settlementRepository;
@@ -59,7 +62,6 @@ public class DataSeeder implements CommandLineRunner {
     private final AnalyticsRepository analyticsRepository;
     private final PasswordEncoder passwordEncoder;
     private final ObjectMapper objectMapper;
-    private final com.msp.backend.modules.user.UserIdGenerator userIdGenerator;
 
     private final Random random = new Random();
 
@@ -79,6 +81,7 @@ public class DataSeeder implements CommandLineRunner {
         transactionRepository.deleteAll();
         settlementRepository.deleteAll();
         creditAdviceRepository.deleteAll();
+        merchantUserMappingRepository.deleteAll(); // clear mappings before merchants
         userRoleRepository.deleteAll();
         rolePermissionRepository.deleteAll();
         permissionRepository.deleteAll();
@@ -242,7 +245,6 @@ public class DataSeeder implements CommandLineRunner {
             u.setMfaEnabled(d.get("mfaEnabled").booleanValue());
             u.setMustChangePassword(d.get("mustChangePassword").booleanValue());
 
-            u.setUserId(userIdGenerator.generate());
             User saved = userRepository.save(u);
             users.add(saved);
 
@@ -277,8 +279,15 @@ public class DataSeeder implements CommandLineRunner {
 
         for (int i = 0; i < merchants.size() && i < merchantUsers.size(); i++) {
             Merchant m = merchants.get(i);
-            m.setUserId(merchantUsers.get(i).getUserId());
-            merchantRepository.save(m);
+            User u = merchantUsers.get(i);
+
+            // Seed into merchant_users junction table
+            MerchantUserMapping mapping = new MerchantUserMapping();
+            mapping.setMerchantId(m.getMerchantId());
+            mapping.setUserId(u.getUserId());
+            mapping.setCreatedBy("SYSTEM");
+            mapping.setLastModifiedBy("SYSTEM");
+            merchantUserMappingRepository.save(mapping);
         }
         log.info("Merchants linked to users");
     }

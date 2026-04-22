@@ -9,6 +9,7 @@ import com.msp.backend.modules.transaction.TransactionService;
 import com.msp.backend.modules.user.User;
 import com.msp.backend.modules.user.UserRepository;
 import com.msp.backend.modules.user.UserService;
+import com.msp.backend.util.MerchantResolver;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -36,6 +37,7 @@ public class ReportController {
     private final TransactionService transactionService;
     private final SettlementService settlementService;
     private final FileGeneratorService fileGeneratorService;
+    private final MerchantResolver merchantResolver;
 
     @GetMapping("/summary")
     public ResponseEntity<Map<String, Object>> getSummaryReport(
@@ -197,15 +199,13 @@ public class ReportController {
     private User getCurrentUser() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         String email = auth.getName();
-        User user = userRepository.findByEmail(email)
+        User user = userRepository.findByEmailAndDeletedAtIsNull(email)
                 .orElseThrow(() -> new RuntimeException("User not found"));
         userService.populateRole(user);
         return user;
     }
 
     private Long getMyMerchantId(User user) {
-        return merchantRepository.findByUserId(user.getUserId())
-                .map(Merchant::getMerchantId)
-                .orElse(null);
+        return merchantResolver.resolveForUser(user);
     }
 }

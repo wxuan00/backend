@@ -21,7 +21,6 @@ public class UserService {
     private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
     private final EntityManager entityManager;
-    private final UserIdGenerator userIdGenerator;
 
     public List<User> getAllUsers() {
         List<User> users = userRepository.findByDeletedAtIsNull();
@@ -29,7 +28,7 @@ public class UserService {
         return users;
     }
 
-    public User getUserById(String id) {
+    public User getUserById(Long id) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("User not found"));
         populateRole(user);
@@ -38,12 +37,20 @@ public class UserService {
 
     @Transactional
     public User createUser(User user) {
-        if (userRepository.existsByEmail(user.getEmail())) {
+        if (userRepository.existsByEmailAndDeletedAtIsNull(user.getEmail())) {
             throw new RuntimeException("Email already exists!");
+        }
+        if (user.getDisplayName() != null && !user.getDisplayName().isBlank()) {
+            if (userRepository.existsByDisplayNameIgnoreCaseAndDeletedAtIsNull(user.getDisplayName().trim())) {
+                throw new RuntimeException("Display name '" + user.getDisplayName().trim() + "' is already taken.");
+            }
+            user.setDisplayName(user.getDisplayName().trim());
         }
 
         String roleName = user.getRole();
-        if (roleName == null) roleName = "MERCHANT";
+        if (roleName == null || roleName.isBlank()) {
+            throw new RuntimeException("A role must be assigned to the user.");
+        }
         if (user.getStatus() == null) user.setStatus("ACTIVE");
 
         String rawPassword = (user.getPassword() == null || user.getPassword().isBlank())
@@ -55,7 +62,6 @@ public class UserService {
         user.setLastModifiedBy(AuditHelper.currentUser());
         user.setMustChangePassword(true); // force password change on first login
         user.setRole(null);
-        user.setUserId(userIdGenerator.generate());
         User saved = userRepository.save(user);
 
         assignRole(saved.getUserId(), roleName, "SYSTEM");
@@ -64,20 +70,24 @@ public class UserService {
     }
 
     @Transactional
-    public void deleteUser(String id) {
+    public void deleteUser(Long id) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("User not found"));
         populateRole(user);
 
-        if ("ADMIN".equals(user.getRole())) {
-            long adminCount = userRepository.findByDeletedAtIsNull().stream()
-                    .filter(u -> {
-                        populateRole(u);
-                        return "ADMIN".equals(u.getRole());
-                    })
+        // Check if user is a bank (SYSTEM-role) user — protect against deleting last bank user
+        boolean isBankUser = userRoleRepository.findByUserId(user.getUserId()).stream()
+                .anyMatch(ur -> roleRepository.findById(ur.getRoleId())
+                        .map(r -> "SYSTEM".equalsIgnoreCase(r.getRoleType())).orElse(false));
+
+        if (isBankUser) {
+            long bankUserCount = userRepository.findByDeletedAtIsNull().stream()
+                    .filter(u -> userRoleRepository.findByUserId(u.getUserId()).stream()
+                            .anyMatch(ur -> roleRepository.findById(ur.getRoleId())
+                                    .map(r -> "SYSTEM".equalsIgnoreCase(r.getRoleType())).orElse(false)))
                     .count();
-            if (adminCount <= 1) {
-                throw new RuntimeException("CRITICAL: Cannot delete the last admin user!");
+            if (bankUserCount <= 1) {
+                throw new RuntimeException("CRITICAL: Cannot delete the last bank user!");
             }
         }
 
@@ -88,7 +98,7 @@ public class UserService {
     }
 
     @Transactional
-    public User updateUser(String id, User updated) {
+    public User updateUser(Long id, User updated) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
@@ -97,8 +107,13 @@ public class UserService {
             user.setFirstName(updated.getFirstName());
         if (updated.getLastName() != null && !updated.getLastName().isBlank())
             user.setLastName(updated.getLastName());
-        if (updated.getDisplayName() != null)
-            user.setDisplayName(updated.getDisplayName().isBlank() ? null : updated.getDisplayName());
+        if (updated.getDisplayName() != null) {
+            String newDisplay = updated.getDisplayName().isBlank() ? null : updated.getDisplayName().trim();
+            if (newDisplay != null && userRepository.existsByDisplayNameIgnoreCaseAndUserIdNotAndDeletedAtIsNull(newDisplay, user.getUserId())) {
+                throw new RuntimeException("Display name '" + newDisplay + "' is already taken.");
+            }
+            user.setDisplayName(newDisplay);
+        }
         if (updated.getContactNumber() != null)
             user.setContactNumber(updated.getContactNumber().isBlank() ? null : updated.getContactNumber());
         if (updated.getStatus() != null && !updated.getStatus().isBlank())
@@ -107,11 +122,7 @@ public class UserService {
         user.setLastModifiedBy(AuditHelper.currentUser());
         user.setLastModifiedAt(java.time.LocalDateTime.now());
         // password is never updated through this method
-
-        if (updated.getRole() != null) {
-            userRoleRepository.deleteByUserId(user.getUserId());
-            assignRole(user.getUserId(), updated.getRole(), AuditHelper.currentUser());
-        }
+        // role changes go through PUT /{id}/roles (syncRoles) only
 
         userRepository.saveAndFlush(user);
         entityManager.detach(user); // detach after flush so no dirty-check on response mutations
@@ -124,22 +135,31 @@ public class UserService {
         List<UserRole> userRoles = userRoleRepository.findByUserId(user.getUserId());
         if (userRoles.isEmpty()) return;
 
-        // Prefer ADMIN or MERCHANT (the system role) over any custom role
+        // Any SYSTEM-type role → mark user as "ADMIN" so frontend isAdmin() works correctly.
+        boolean hasSystemRole = userRoles.stream()
+                .anyMatch(ur -> roleRepository.findById(ur.getRoleId())
+                        .map(r -> "SYSTEM".equalsIgnoreCase(r.getRoleType())).orElse(false));
+
+        if (hasSystemRole) {
+            user.setRole("ADMIN");
+            return;
+        }
+
+        // Merchant users: prefer MERCHANT base role name, else first role
         for (UserRole ur : userRoles) {
             roleRepository.findById(ur.getRoleId()).ifPresent(role -> {
-                if ("ADMIN".equals(role.getRoleName()) || "MERCHANT".equals(role.getRoleName())) {
+                if ("MERCHANT".equalsIgnoreCase(role.getRoleName())) {
                     user.setRole(role.getRoleName());
                 }
             });
         }
-        // Fallback: if no system role found, use the first role available
         if (user.getRole() == null) {
             roleRepository.findById(userRoles.get(0).getRoleId())
                     .ifPresent(role -> user.setRole(role.getRoleName()));
         }
     }
 
-    private void assignRole(String userId, String roleName, String generatedBy) {
+    private void assignRole(Long userId, String roleName, String generatedBy) {
         Role role = roleRepository.findByRoleName(roleName)
                 .orElseThrow(() -> new RuntimeException("Role not found: " + roleName));
         UserRole userRole = new UserRole();
@@ -150,7 +170,7 @@ public class UserService {
     }
 
     @Transactional
-    public void resetPassword(String id, String newPassword) {
+    public void resetPassword(Long id, String newPassword) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("User not found"));
         user.setPassword(passwordEncoder.encode(newPassword));
