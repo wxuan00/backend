@@ -35,6 +35,27 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<Map<String, Object>> handleRuntimeException(RuntimeException ex) {
+        String msg = ex.getMessage() != null ? ex.getMessage().toLowerCase() : "";
+
+        // Not-found cases → 404
+        if (msg.contains("not found") || msg.contains("does not exist")) {
+            log.warn("Not found: {}", ex.getMessage());
+            return buildResponse(HttpStatus.NOT_FOUND, ex.getMessage());
+        }
+
+        // Conflict / duplicate cases → 400
+        if (msg.contains("already exists") || msg.contains("duplicate") || msg.contains("already in use")) {
+            log.warn("Conflict: {}", ex.getMessage());
+            return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage());
+        }
+
+        // Invalid input / business rule violations → 400
+        if (msg.contains("invalid") || msg.contains("required") || msg.contains("expired")
+                || msg.contains("cannot") || msg.contains("must ") || msg.contains("at least")) {
+            log.warn("Bad request: {}", ex.getMessage());
+            return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage());
+        }
+
         log.error("Runtime exception: {}", ex.getMessage(), ex);
         return buildResponse(HttpStatus.INTERNAL_SERVER_ERROR, ex.getMessage());
     }

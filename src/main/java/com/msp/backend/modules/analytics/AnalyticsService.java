@@ -12,7 +12,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
@@ -634,10 +633,11 @@ public class AnalyticsService {
             log.warn("Python sidecar {} returned {}: {}", path, ex.getStatusCode(), ex.getResponseBodyAsString());
             String detail = ex.getResponseBodyAsString();
             try {
-                com.fasterxml.jackson.databind.ObjectMapper om = new com.fasterxml.jackson.databind.ObjectMapper();
-                Map<?, ?> body = om.readValue(detail, Map.class);
-                Object d = body.get("detail");
-                if (d != null) detail = d.toString();
+                // Extract "detail" field from FastAPI error JSON without Jackson
+                java.util.regex.Matcher m = java.util.regex.Pattern
+                        .compile("\"detail\"\\s*:\\s*\"([^\"]+)\"")
+                        .matcher(detail);
+                if (m.find()) detail = m.group(1);
             } catch (Exception ignored) {}
             Map<String, Object> error = new LinkedHashMap<>();
             error.put("error", detail);
