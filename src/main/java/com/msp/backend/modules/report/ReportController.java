@@ -196,6 +196,68 @@ public class ReportController {
                 .body(csv);
     }
 
+    // ── PDF export endpoints ─────────────────────────────────────────────────
+
+    @GetMapping("/summary/export/pdf")
+    public ResponseEntity<byte[]> exportSummaryReportPdf(
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate) {
+        User currentUser = getCurrentUser();
+        Map<String, Object> report = buildSummaryReport(currentUser, startDate, endDate);
+        byte[] pdf = fileGeneratorService.generateSummaryReportPdf(report);
+        String filename = buildFilename("summary-report", startDate, endDate, "pdf");
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + filename)
+                .contentType(MediaType.APPLICATION_PDF)
+                .body(pdf);
+    }
+
+    @GetMapping("/transactions/export/pdf")
+    public ResponseEntity<byte[]> exportTransactionsPdf(
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate) {
+        User currentUser = getCurrentUser();
+        List<Transaction> transactions;
+        if ("ADMIN".equals(currentUser.getRole())) {
+            transactions = transactionService.getAllTransactions();
+        } else {
+            Long merchantId = getMyMerchantId(currentUser);
+            transactions = merchantId != null
+                    ? transactionService.getTransactionsByMerchantId(merchantId)
+                    : List.of();
+        }
+        transactions = filterByDateRange(transactions, startDate, endDate);
+        byte[] pdf = fileGeneratorService.generateTransactionsPdf(transactions);
+        String filename = buildFilename("transactions-export", startDate, endDate, "pdf");
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + filename)
+                .contentType(MediaType.APPLICATION_PDF)
+                .body(pdf);
+    }
+
+    @GetMapping("/settlements/export/pdf")
+    public ResponseEntity<byte[]> exportSettlementsPdf(
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate) {
+        User currentUser = getCurrentUser();
+        List<Settlement> settlements;
+        if ("ADMIN".equals(currentUser.getRole())) {
+            settlements = settlementService.getAllSettlements();
+        } else {
+            Long merchantId = getMyMerchantId(currentUser);
+            settlements = merchantId != null
+                    ? settlementService.getSettlementsByMerchantId(merchantId)
+                    : List.of();
+        }
+        settlements = filterSettlementsByDateRange(settlements, startDate, endDate);
+        byte[] pdf = fileGeneratorService.generateSettlementsPdf(settlements);
+        String filename = buildFilename("settlements-export", startDate, endDate, "pdf");
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + filename)
+                .contentType(MediaType.APPLICATION_PDF)
+                .body(pdf);
+    }
+
     private User getCurrentUser() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         String email = auth.getName();
