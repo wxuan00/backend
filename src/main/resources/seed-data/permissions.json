@@ -43,5 +43,10 @@
     "permissionName": "VIEW_OWN_DATA",
     "description": "View own merchant data",
     "module": "MERCHANT"
+  },
+  {
+    "permissionName": "MANAGE_CHILD_USERS",
+    "description": "Manage only users created by yourself (child users)",
+    "module": "USER"
   }
 ]

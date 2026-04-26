@@ -39,56 +39,82 @@ public class DashboardController {
     private final MerchantResolver merchantResolver;
 
     @GetMapping("/stats")
-    public Map<String, Object> getDashboardStats() {
+    public Map<String, Object> getDashboardStats(@RequestParam(required = false) Long merchantId,
+                                                  @RequestParam(required = false) String startDate,
+                                                  @RequestParam(required = false) String endDate) {
         User currentUser = getCurrentUser();
         Map<String, Object> stats = new HashMap<>();
+        final java.time.LocalDate sDate = startDate != null ? java.time.LocalDate.parse(startDate) : null;
+        final java.time.LocalDate eDate = endDate != null ? java.time.LocalDate.parse(endDate) : null;
 
         if ("ADMIN".equals(currentUser.getRole())) {
-            List<User> users = userRepository.findByDeletedAtIsNull();
-            users.forEach(userService::populateRole);
-            stats.put("totalUsers", users.size());
-
-            List<Map<String, Object>> recentUsers = users.stream()
-                    .sorted((a, b) -> {
-                        if (a.getCreatedAt() == null) return 1;
-                        if (b.getCreatedAt() == null) return -1;
-                        return b.getCreatedAt().compareTo(a.getCreatedAt());
-                    })
-                    .limit(5)
-                    .map(u -> {
-                        Map<String, Object> m = new HashMap<>();
-                        m.put("id", u.getUserId());
-                        m.put("firstName", u.getFirstName());
-                        m.put("lastName", u.getLastName());
-                        m.put("displayName", u.getDisplayName());
-                        m.put("email", u.getEmail());
-                        m.put("role", u.getRole());
-                        m.put("status", u.getStatus());
-                        return m;
-                    })
-                    .toList();
-            stats.put("recentUsers", recentUsers);
-
-            var allMerchants = merchantRepository.findAll();
-            stats.put("totalMerchants", allMerchants.size());
-            stats.put("activeMerchants", allMerchants.stream().filter(m -> "ACTIVE".equals(m.getStatus())).count());
-            stats.put("pendingMerchants", allMerchants.stream().filter(m -> "PENDING".equals(m.getStatus())).count());
-
-            stats.put("totalTransactions", transactionRepository.count());
-            stats.put("totalSettlements", settlementService.getAllSettlements().size());
-        } else {
-            Long merchantId = getMyMerchantId(currentUser);
             if (merchantId != null) {
+                // Admin filtering by a specific merchant
                 var myMerchant = merchantRepository.findById(merchantId);
                 stats.put("totalMerchants", myMerchant.isPresent() ? 1 : 0);
                 stats.put("activeMerchants", myMerchant.filter(m -> "ACTIVE".equals(m.getStatus())).isPresent() ? 1 : 0);
                 stats.put("pendingMerchants", myMerchant.filter(m -> "PENDING".equals(m.getStatus())).isPresent() ? 1 : 0);
+                stats.put("totalTransactions", countTransactionsInRange(transactionRepository.findByMerchantIdOrderByTxnDateDesc(merchantId), sDate, eDate));
+                stats.put("totalSettlements", settlementService.getSettlementsByMerchantId(merchantId).size());
 
-                var myTransactions = transactionRepository.findByMerchantIdOrderByTxnDateDesc(merchantId);
-                stats.put("totalTransactions", myTransactions.size());
+                List<User> users = userRepository.findByDeletedAtIsNull();
+                users.forEach(userService::populateRole);
+                stats.put("totalUsers", users.size());
+                stats.put("recentUsers", List.of());
+            } else {
+                List<User> users = userRepository.findByDeletedAtIsNull();
+                users.forEach(userService::populateRole);
+                stats.put("totalUsers", users.size());
 
-                var mySettlements = settlementService.getSettlementsByMerchantId(merchantId);
-                stats.put("totalSettlements", mySettlements.size());
+                List<Map<String, Object>> recentUsers = users.stream()
+                        .sorted((a, b) -> {
+                            if (a.getCreatedAt() == null) return 1;
+                            if (b.getCreatedAt() == null) return -1;
+                            return b.getCreatedAt().compareTo(a.getCreatedAt());
+                        })
+                        .limit(5)
+                        .map(u -> {
+                            Map<String, Object> m = new HashMap<>();
+                            m.put("id", u.getUserId());
+                            m.put("firstName", u.getFirstName());
+                            m.put("lastName", u.getLastName());
+                            m.put("displayName", u.getDisplayName());
+                            m.put("email", u.getEmail());
+                            m.put("role", u.getRole());
+                            m.put("status", u.getStatus());
+                            return m;
+                        })
+                        .toList();
+                stats.put("recentUsers", recentUsers);
+
+                var allMerchants = merchantRepository.findAll();
+                stats.put("totalMerchants", allMerchants.size());
+                stats.put("activeMerchants", allMerchants.stream().filter(m -> "ACTIVE".equals(m.getStatus())).count());
+                stats.put("pendingMerchants", allMerchants.stream().filter(m -> "PENDING".equals(m.getStatus())).count());
+
+                stats.put("totalTransactions", countTransactionsInRange(transactionService.getAllTransactions(), sDate, eDate));
+                stats.put("totalSettlements", settlementService.getAllSettlements().size());
+            }
+        } else {
+            List<Long> myMerchantIds = merchantResolver.resolveAllForUser(currentUser);
+            // If merchantId param given, must be one the user owns
+            if (merchantId != null && myMerchantIds.contains(merchantId)) {
+                myMerchantIds = List.of(merchantId);
+            }
+            if (!myMerchantIds.isEmpty()) {
+                var myMerchants = merchantRepository.findAllById(myMerchantIds);
+                stats.put("totalMerchants", myMerchants.size());
+                stats.put("activeMerchants", myMerchants.stream().filter(m -> "ACTIVE".equals(m.getStatus())).count());
+                stats.put("pendingMerchants", myMerchants.stream().filter(m -> "PENDING".equals(m.getStatus())).count());
+
+                long txnCount = 0;
+                long settlCount = 0;
+                for (Long mid : myMerchantIds) {
+                    txnCount += countTransactionsInRange(transactionRepository.findByMerchantIdOrderByTxnDateDesc(mid), sDate, eDate);
+                    settlCount += settlementService.getSettlementsByMerchantId(mid).size();
+                }
+                stats.put("totalTransactions", txnCount);
+                stats.put("totalSettlements", settlCount);
             } else {
                 stats.put("totalMerchants", 0);
                 stats.put("activeMerchants", 0);
@@ -99,6 +125,16 @@ public class DashboardController {
         }
 
         return stats;
+    }
+
+    private long countTransactionsInRange(List<Transaction> txns, java.time.LocalDate sDate, java.time.LocalDate eDate) {
+        return txns.stream().filter(t -> {
+            if (t.getTxnDate() == null) return false;
+            java.time.LocalDate d = t.getTxnDate().toLocalDate();
+            if (sDate != null && d.isBefore(sDate)) return false;
+            if (eDate != null && d.isAfter(eDate)) return false;
+            return true;
+        }).count();
     }
 
     @GetMapping("/insights")
@@ -121,27 +157,48 @@ public class DashboardController {
     }
 
     @GetMapping("/chart-data")
-    public Map<String, Object> getChartData() {
+    public Map<String, Object> getChartData(@RequestParam(required = false) Long merchantId,
+                                            @RequestParam(required = false) String startDate,
+                                            @RequestParam(required = false) String endDate) {
         User currentUser = getCurrentUser();
         Map<String, Object> charts = new HashMap<>();
+        final java.time.LocalDate sDate = startDate != null ? java.time.LocalDate.parse(startDate) : null;
+        final java.time.LocalDate eDate = endDate != null ? java.time.LocalDate.parse(endDate) : null;
 
         List<Transaction> transactions;
         List<Settlement> settlements;
         List<Merchant> merchants;
 
         if ("ADMIN".equals(currentUser.getRole())) {
-            transactions = transactionService.getAllTransactions();
-            settlements = settlementService.getAllSettlements();
-            merchants = merchantRepository.findAll();
+            if (merchantId != null) {
+                transactions = transactionService.getTransactionsByMerchantId(merchantId);
+                settlements = settlementService.getSettlementsByMerchantId(merchantId);
+                merchants = merchantRepository.findById(merchantId).map(List::of).orElse(List.of());
+            } else {
+                transactions = transactionService.getAllTransactions();
+                settlements = settlementService.getAllSettlements();
+                merchants = merchantRepository.findAll();
+            }
         } else {
-            Long merchantId = getMyMerchantId(currentUser);
-            transactions = merchantId != null
-                    ? transactionService.getTransactionsByMerchantId(merchantId)
-                    : List.of();
-            settlements = merchantId != null
-                    ? settlementService.getSettlementsByMerchantId(merchantId)
-                    : List.of();
-            merchants = List.of();
+            List<Long> myMerchantIds = merchantResolver.resolveAllForUser(currentUser);
+            if (merchantId != null && myMerchantIds.contains(merchantId)) {
+                myMerchantIds = List.of(merchantId);
+            }
+            transactions = new java.util.ArrayList<>();
+            settlements = new java.util.ArrayList<>();
+            for (Long mid : myMerchantIds) {
+                transactions.addAll(transactionService.getTransactionsByMerchantId(mid));
+                settlements.addAll(settlementService.getSettlementsByMerchantId(mid));
+            }
+            merchants = merchantRepository.findAllById(myMerchantIds);
+        }
+
+        // Apply date range filter
+        if (sDate != null) {
+            transactions = transactions.stream().filter(t -> t.getTxnDate() != null && !t.getTxnDate().toLocalDate().isBefore(sDate)).collect(Collectors.toList());
+        }
+        if (eDate != null) {
+            transactions = transactions.stream().filter(t -> t.getTxnDate() != null && !t.getTxnDate().toLocalDate().isAfter(eDate)).collect(Collectors.toList());
         }
 
         // 1. Transaction Status Breakdown (Doughnut)
@@ -151,18 +208,33 @@ public class DashboardController {
                         Collectors.counting()));
         charts.put("transactionStatus", txnStatus);
 
-        // 2. Transaction Volume by Day (Last 7 days - Line)
-        LocalDateTime sevenDaysAgo = LocalDateTime.now().minusDays(7);
+        // 2. Transaction Volume by Day (dynamic range - Line)
+        final java.time.LocalDate volumeStart;
+        final java.time.LocalDate volumeEnd;
+        if (sDate != null && eDate != null) {
+            volumeStart = sDate;
+            volumeEnd = eDate;
+        } else if (sDate != null) {
+            volumeStart = sDate;
+            volumeEnd = java.time.LocalDate.now();
+        } else if (eDate != null) {
+            volumeStart = eDate.minusDays(6);
+            volumeEnd = eDate;
+        } else {
+            volumeStart = java.time.LocalDate.now().minusDays(6);
+            volumeEnd = java.time.LocalDate.now();
+        }
         DateTimeFormatter dayFmt = DateTimeFormatter.ofPattern("MMM dd");
         Map<String, Long> dailyVolume = new LinkedHashMap<>();
-        for (int i = 6; i >= 0; i--) {
-            LocalDateTime day = LocalDateTime.now().minusDays(i);
-            dailyVolume.put(day.format(dayFmt), 0L);
+        for (java.time.LocalDate d = volumeStart; !d.isAfter(volumeEnd); d = d.plusDays(1)) {
+            dailyVolume.put(d.format(dayFmt), 0L);
         }
         transactions.stream()
-                .filter(t -> t.getTxnDate() != null && t.getTxnDate().isAfter(sevenDaysAgo))
+                .filter(t -> t.getTxnDate() != null
+                        && !t.getTxnDate().toLocalDate().isBefore(volumeStart)
+                        && !t.getTxnDate().toLocalDate().isAfter(volumeEnd))
                 .forEach(t -> {
-                    String key = t.getTxnDate().format(dayFmt);
+                    String key = t.getTxnDate().toLocalDate().format(dayFmt);
                     dailyVolume.computeIfPresent(key, (k, v) -> v + 1);
                 });
         charts.put("dailyTransactionVolume", dailyVolume);
@@ -179,17 +251,18 @@ public class DashboardController {
                 .collect(Collectors.groupingBy(Settlement::getSettlementType, Collectors.counting()));
         charts.put("settlementTypes", settlementTypes);
 
-        // 5. Daily Revenue (MYR) – Last 7 days (Bar)
+        // 5. Daily Revenue (MYR) – dynamic range (Bar)
         Map<String, Double> dailyRevenue = new LinkedHashMap<>();
-        for (int i = 6; i >= 0; i--) {
-            LocalDateTime day = LocalDateTime.now().minusDays(i);
-            dailyRevenue.put(day.format(dayFmt), 0.0);
+        for (java.time.LocalDate d = volumeStart; !d.isAfter(volumeEnd); d = d.plusDays(1)) {
+            dailyRevenue.put(d.format(dayFmt), 0.0);
         }
         transactions.stream()
-                .filter(t -> t.getTxnDate() != null && t.getTxnDate().isAfter(sevenDaysAgo)
+                .filter(t -> t.getTxnDate() != null
+                        && !t.getTxnDate().toLocalDate().isBefore(volumeStart)
+                        && !t.getTxnDate().toLocalDate().isAfter(volumeEnd)
                         && t.getAmount() != null)
                 .forEach(t -> {
-                    String key = t.getTxnDate().format(dayFmt);
+                    String key = t.getTxnDate().toLocalDate().format(dayFmt);
                     dailyRevenue.computeIfPresent(key, (k, v) -> v + t.getAmount().doubleValue());
                 });
         charts.put("dailyRevenue", dailyRevenue);

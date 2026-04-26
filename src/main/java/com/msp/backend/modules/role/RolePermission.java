@@ -26,21 +26,21 @@ public class RolePermission {
     @JoinColumn(name = "permission_id", insertable = false, updatable = false)
     private Permission permission;
 
-    @Column(name = "generated_by")
-    private String generatedBy;
+    @Column(name = "created_by")
+    private String createdBy;
 
-    @Column(name = "generated_at")
-    private LocalDateTime generatedAt;
-
-    @Column(name = "last_modified_at")
-    private LocalDateTime lastModifiedAt;
+    @Column(name = "created_at")
+    private LocalDateTime createdAt;
 
     @Column(name = "last_modified_by")
     private String lastModifiedBy;
 
+    @Column(name = "last_modified_at")
+    private LocalDateTime lastModifiedAt;
+
     @PrePersist
     protected void onCreate() {
-        this.generatedAt = LocalDateTime.now();
+        this.createdAt = LocalDateTime.now();
         this.lastModifiedAt = LocalDateTime.now();
     }
 

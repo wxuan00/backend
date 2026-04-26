@@ -3,21 +3,20 @@ package com.msp.backend.modules.merchant;
 import com.msp.backend.modules.user.User;
 import jakarta.persistence.*;
 import lombok.Data;
+import java.io.Serializable;
 import java.time.LocalDateTime;
 
 @Data
 @Entity
-@Table(name = "merchant_users",
-       uniqueConstraints = @UniqueConstraint(columnNames = {"merchant_id", "user_id"}))
+@Table(name = "merchant_users")
+@IdClass(MerchantUserMapping.MerchantUserId.class)
 public class MerchantUserMapping {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-
     @Column(name = "merchant_id", nullable = false)
     private Long merchantId;
 
+    @Id
     @Column(name = "user_id", nullable = false)
     private Long userId;
 
@@ -36,24 +35,30 @@ public class MerchantUserMapping {
     @Column(name = "created_by")
     private String createdBy;
 
-    @Column(name = "created_date")
-    private LocalDateTime createdDate;
+    @Column(name = "created_at")
+    private LocalDateTime createdAt;
 
     @Column(name = "last_modified_by")
     private String lastModifiedBy;
 
-    @Column(name = "last_modified_date")
-    private LocalDateTime lastModifiedDate;
+    @Column(name = "last_modified_at")
+    private LocalDateTime lastModifiedAt;
 
     @PrePersist
     protected void onCreate() {
         LocalDateTime now = LocalDateTime.now();
-        if (this.createdDate == null) this.createdDate = now;
-        if (this.lastModifiedDate == null) this.lastModifiedDate = now;
+        if (this.createdAt == null) this.createdAt = now;
+        if (this.lastModifiedAt == null) this.lastModifiedAt = now;
     }
 
     @PreUpdate
     protected void onUpdate() {
-        this.lastModifiedDate = LocalDateTime.now();
+        this.lastModifiedAt = LocalDateTime.now();
+    }
+
+    @Data
+    public static class MerchantUserId implements Serializable {
+        private Long merchantId;
+        private Long userId;
     }
 }

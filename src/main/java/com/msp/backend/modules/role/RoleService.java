@@ -16,7 +16,7 @@ public class RoleService {
     private final UserRoleRepository userRoleRepository;
 
     public List<Role> getAllRoles() {
-        return roleRepository.findAll();
+        return roleRepository.findByDeletedAtIsNull();
     }
 
     public Role getRoleById(Long id) {
@@ -25,7 +25,7 @@ public class RoleService {
     }
 
     public Role createRole(Role role) {
-        if (roleRepository.findByRoleName(role.getRoleName()).isPresent()) {
+        if (roleRepository.findByRoleNameAndDeletedAtIsNull(role.getRoleName()).isPresent()) {
             throw new RuntimeException("Role name already exists");
         }
         role.setCreatedBy(AuditHelper.currentUser());
@@ -49,9 +49,13 @@ public class RoleService {
         if ("ADMIN".equals(role.getRoleName()) || "MERCHANT".equals(role.getRoleName())) {
             throw new RuntimeException("Cannot delete system role: " + role.getRoleName());
         }
-        // Remove FK-referencing rows first
+        // Remove FK-referencing rows
         rolePermissionRepository.deleteByRoleId(id);
         userRoleRepository.deleteByRoleId(id);
-        roleRepository.deleteById(id);
+        // Soft delete
+        role.setDeletedAt(java.time.LocalDateTime.now());
+        role.setLastModifiedBy(AuditHelper.currentUser());
+        role.setLastModifiedAt(java.time.LocalDateTime.now());
+        roleRepository.save(role);
     }
 }

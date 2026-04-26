@@ -24,7 +24,8 @@ public class User {
     @Column(nullable = false)
     private String password; // BCrypt hashed (not in ERD but required for auth)
 
-    @Column(name = "display_name")
+    @Column(name = "display_name", nullable = false)
+    @NotBlank(message = "Display name is required")
     private String displayName;
 
     @Column(name = "first_name", nullable = false)

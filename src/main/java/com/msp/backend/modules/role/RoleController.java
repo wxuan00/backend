@@ -55,7 +55,7 @@ public class RoleController {
             RolePermission rp = new RolePermission();
             rp.setRoleId(id);
             rp.setPermissionId(permId);
-            rp.setGeneratedBy(actor);
+            rp.setCreatedBy(actor);
             rp.setLastModifiedBy(actor);
             rp.setLastModifiedAt(java.time.LocalDateTime.now());
             rolePermissionRepository.save(rp);

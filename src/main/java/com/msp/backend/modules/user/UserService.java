@@ -2,6 +2,8 @@ package com.msp.backend.modules.user;
 
 import com.msp.backend.modules.role.Role;
 import com.msp.backend.modules.role.RoleRepository;
+import com.msp.backend.modules.role.RolePermissionRepository;
+import com.msp.backend.modules.merchant.MerchantUserMappingRepository;
 import com.msp.backend.util.AuditHelper;
 import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
@@ -19,6 +21,8 @@ public class UserService {
     private final UserRepository userRepository;
     private final UserRoleRepository userRoleRepository;
     private final RoleRepository roleRepository;
+    private final RolePermissionRepository rolePermissionRepository;
+    private final MerchantUserMappingRepository merchantUserMappingRepository;
     private final PasswordEncoder passwordEncoder;
     private final EntityManager entityManager;
 
@@ -64,7 +68,14 @@ public class UserService {
         user.setRole(null);
         User saved = userRepository.save(user);
 
-        assignRole(saved.getUserId(), roleName, "SYSTEM");
+        // Try to assign the initial role by name; if no role exists with that exact name
+        // (e.g. the base "MERCHANT" or "ADMIN" role was renamed), skip — the frontend will
+        // call syncRoles immediately after with the correct roleIds.
+        try {
+            assignRole(saved.getUserId(), roleName, "SYSTEM");
+        } catch (RuntimeException ignored) {
+            // Role not found by name — will be set via syncRoles call from frontend
+        }
         saved.setRole(roleName);
         return saved;
     }
@@ -94,6 +105,9 @@ public class UserService {
         user.setDeletedAt(java.time.LocalDateTime.now());
         user.setLastModifiedBy(AuditHelper.currentUser());
         user.setLastModifiedAt(java.time.LocalDateTime.now());
+        // Clean up junction tables
+        userRoleRepository.deleteByUserId(id);
+        merchantUserMappingRepository.deleteByUserId(id);
         userRepository.save(user);
     }
 
@@ -160,12 +174,12 @@ public class UserService {
     }
 
     private void assignRole(Long userId, String roleName, String generatedBy) {
-        Role role = roleRepository.findByRoleName(roleName)
+        Role role = roleRepository.findByRoleNameAndDeletedAtIsNull(roleName)
                 .orElseThrow(() -> new RuntimeException("Role not found: " + roleName));
         UserRole userRole = new UserRole();
         userRole.setUserId(userId);
         userRole.setRoleId(role.getRoleId());
-        userRole.setGeneratedBy(generatedBy);
+        userRole.setCreatedBy(generatedBy);
         userRoleRepository.save(userRole);
     }
 

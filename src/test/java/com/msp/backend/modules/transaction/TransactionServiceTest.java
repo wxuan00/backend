@@ -160,7 +160,7 @@ class TransactionServiceTest {
 
         org.springframework.data.domain.Page<Transaction> result =
                 transactionService.getTransactionsPage(
-                        100L, "TestMerchant", "1", "4111", "APPROVED", "ONLINE",
+                        java.util.List.of(100L), "TestMerchant", "1", "4111", "APPROVED", "ONLINE",
                         "2025-01-01", "2025-12-31",
                         0, 5, "txnDate", "asc");
 

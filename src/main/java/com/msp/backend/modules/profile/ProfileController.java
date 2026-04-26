@@ -24,14 +24,45 @@ public class ProfileController {
     private final PasswordEncoder passwordEncoder;
     private final TotpService totpService;
 
+    private final com.msp.backend.modules.merchant.MerchantUserMappingRepository merchantUserMappingRepository;
+    private final com.msp.backend.modules.merchant.MerchantRepository merchantRepository;
+
     // Get own profile
     @GetMapping
-    public ResponseEntity<User> getProfile() {
+    public ResponseEntity<Map<String, Object>> getProfile() {
         User user = getCurrentUser();
         userService.populateRole(user);
         // Don't return password
         user.setPassword(null);
-        return ResponseEntity.ok(user);
+
+        Map<String, Object> result = new java.util.LinkedHashMap<>();
+        result.put("userId", user.getUserId());
+        result.put("firstName", user.getFirstName());
+        result.put("lastName", user.getLastName());
+        result.put("displayName", user.getDisplayName());
+        result.put("email", user.getEmail());
+        result.put("contactNumber", user.getContactNumber());
+        result.put("role", user.getRole());
+        result.put("status", user.getStatus());
+        result.put("mfaEnabled", user.isMfaEnabled());
+        result.put("mustChangePassword", user.getMustChangePassword());
+        result.put("createdAt", user.getCreatedAt());
+        result.put("lastLoginAt", user.getLastLoginAt());
+
+        // Include linked merchants
+        var mappings = merchantUserMappingRepository.findByUserId(user.getUserId());
+        var linkedMerchants = mappings.stream().map(m -> {
+            Map<String, Object> merchant = new java.util.LinkedHashMap<>();
+            merchant.put("merchantId", m.getMerchantId());
+            merchantRepository.findById(m.getMerchantId()).ifPresent(me -> {
+                merchant.put("merchantName", me.getMerchantName());
+                merchant.put("status", me.getStatus());
+            });
+            return merchant;
+        }).collect(java.util.stream.Collectors.toList());
+        result.put("linkedMerchants", linkedMerchants);
+
+        return ResponseEntity.ok(result);
     }
 
     // Update own profile (name, phone, display name)

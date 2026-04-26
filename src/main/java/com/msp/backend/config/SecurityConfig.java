@@ -37,9 +37,9 @@ public class SecurityConfig {
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/auth/me").authenticated()
                         .requestMatchers("/api/auth/mfa/verify").authenticated()
-                        // Admin-only endpoints: user management, role management
-                        .requestMatchers("/api/users/**").hasRole("ADMIN")
-                        .requestMatchers("/api/roles/**").hasRole("ADMIN")
+                        // Admin-only endpoints: role management
+                        .requestMatchers("/api/users/**").authenticated()
+                        .requestMatchers("/api/roles/**").authenticated()
                         // Profile endpoints: accessible by all authenticated users
                         .requestMatchers("/api/profile/**").authenticated()
                         // Merchant, Transaction, Settlement, Credit Advice endpoints (filtered by role in controller)

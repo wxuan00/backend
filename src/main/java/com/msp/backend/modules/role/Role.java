@@ -14,7 +14,7 @@ public class Role {
     @Column(name = "role_id")
     private Long roleId;
 
-    @Column(name = "role_name", nullable = false, unique = true)
+    @Column(name = "role_name", nullable = false)
     private String roleName; // e.g., ADMIN, MERCHANT
 
     private String description;
@@ -33,6 +33,9 @@ public class Role {
 
     @Column(name = "last_modified_by")
     private String lastModifiedBy;
+
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
 
     @PrePersist
     protected void onCreate() {

@@ -40,15 +40,15 @@ public class TransactionController {
             @RequestParam(required = false) String dateTo
     ) {
         User currentUser = getCurrentUser();
-        Long restrictToMerchantId = null;
+        java.util.List<Long> restrictToMerchantIds = null;
         if (!"ADMIN".equals(currentUser.getRole())) {
-            restrictToMerchantId = getMyMerchantId(currentUser);
-            if (restrictToMerchantId == null) {
-                return Page.empty();
+            restrictToMerchantIds = merchantResolver.resolveAllForUser(currentUser);
+            if (restrictToMerchantIds.isEmpty()) {
+                return org.springframework.data.domain.Page.empty();
             }
         }
         return transactionService.getTransactionsPage(
-                restrictToMerchantId, merchantName, txnId, cardNo, status, channel, dateFrom, dateTo,
+                restrictToMerchantIds, merchantName, txnId, cardNo, status, channel, dateFrom, dateTo,
                 page, size, sortBy, sortDir);
     }
 
@@ -58,8 +58,8 @@ public class TransactionController {
         User currentUser = getCurrentUser();
 
         if (!"ADMIN".equals(currentUser.getRole())) {
-            Long merchantId = getMyMerchantId(currentUser);
-            if (merchantId == null || !merchantId.equals(txn.getMerchantId())) {
+            java.util.List<Long> myMerchantIds = merchantResolver.resolveAllForUser(currentUser);
+            if (myMerchantIds.isEmpty() || !myMerchantIds.contains(txn.getMerchantId())) {
                 return ResponseEntity.status(403).build();
             }
         }
@@ -77,9 +77,5 @@ public class TransactionController {
         User user = userRepository.findByEmailAndDeletedAtIsNull(email).orElseThrow();
         userService.populateRole(user);
         return user;
-    }
-
-    private Long getMyMerchantId(User user) {
-        return merchantResolver.resolveForUser(user);
     }
 }

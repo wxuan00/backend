@@ -39,7 +39,7 @@ public class TransactionService {
     }
 
     public Page<Transaction> getTransactionsPage(
-            Long restrictToMerchantId,
+            List<Long> restrictToMerchantIds,
             String merchantName,
             String txnId,
             String cardNo,
@@ -78,8 +78,8 @@ public class TransactionService {
                 }
             }
 
-            if (restrictToMerchantId != null) {
-                predicates.add(cb.equal(root.get("merchantId"), restrictToMerchantId));
+            if (restrictToMerchantIds != null && !restrictToMerchantIds.isEmpty()) {
+                predicates.add(root.get("merchantId").in(restrictToMerchantIds));
             }
             if (merchantName != null && !merchantName.isBlank()) {
                 // For count query, use a subquery-safe approach with a fresh join

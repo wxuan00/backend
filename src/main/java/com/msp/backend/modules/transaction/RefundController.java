@@ -39,13 +39,13 @@ public class RefundController {
             @RequestParam(required = false) String dateTo
     ) {
         User currentUser = getCurrentUser();
-        Long restrictToMerchantId = null;
+        java.util.List<Long> restrictToMerchantIds = null;
         if (!"ADMIN".equals(currentUser.getRole())) {
-            restrictToMerchantId = getMyMerchantId(currentUser);
-            if (restrictToMerchantId == null) return Page.empty();
+            restrictToMerchantIds = merchantResolver.resolveAllForUser(currentUser);
+            if (restrictToMerchantIds.isEmpty()) return Page.empty();
         }
         return refundService.getRefundsPage(
-                restrictToMerchantId, merchantName, refundRefNo, transactionId, cardNo, status, refundType, dateFrom, dateTo,
+                restrictToMerchantIds, merchantName, refundRefNo, transactionId, cardNo, status, refundType, dateFrom, dateTo,
                 page, size, sortBy, sortDir);
     }
 
@@ -55,8 +55,8 @@ public class RefundController {
         User currentUser = getCurrentUser();
 
         if (!"ADMIN".equals(currentUser.getRole())) {
-            Long merchantId = getMyMerchantId(currentUser);
-            if (merchantId == null || !merchantId.equals(refund.getMerchantId())) {
+            java.util.List<Long> myMerchantIds = merchantResolver.resolveAllForUser(currentUser);
+            if (myMerchantIds.isEmpty() || !myMerchantIds.contains(refund.getMerchantId())) {
                 return ResponseEntity.status(403).build();
             }
         }
@@ -79,8 +79,8 @@ public class RefundController {
             User currentUser = getCurrentUser();
             Refund refund = refundService.getRefundById(id);
             if (!"ADMIN".equals(currentUser.getRole())) {
-                Long merchantId = getMyMerchantId(currentUser);
-                if (merchantId == null || !merchantId.equals(refund.getMerchantId())) {
+                java.util.List<Long> myMerchantIds = merchantResolver.resolveAllForUser(currentUser);
+                if (myMerchantIds.isEmpty() || !myMerchantIds.contains(refund.getMerchantId())) {
                     return ResponseEntity.status(403).build();
                 }
             }
@@ -98,9 +98,4 @@ public class RefundController {
         userService.populateRole(user);
         return user;
     }
-
-    private Long getMyMerchantId(User user) {
-        return merchantResolver.resolveForUser(user);
-    }
 }
-

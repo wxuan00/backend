@@ -71,7 +71,7 @@ public class RefundService {
     }
 
     public Page<Refund> getRefundsPage(
-            Long restrictToMerchantId,
+            List<Long> restrictToMerchantIds,
             String merchantName,
             String refundRefNo,
             String transactionId,
@@ -108,8 +108,8 @@ public class RefundService {
                 }
             }
 
-            if (restrictToMerchantId != null) {
-                predicates.add(cb.equal(root.get("merchantId"), restrictToMerchantId));
+            if (restrictToMerchantIds != null && !restrictToMerchantIds.isEmpty()) {
+                predicates.add(root.get("merchantId").in(restrictToMerchantIds));
             }
             if (merchantName != null && !merchantName.isBlank()) {
                 var mj = isCountQuery ? root.join("merchant", jakarta.persistence.criteria.JoinType.LEFT) : merchantJoin;

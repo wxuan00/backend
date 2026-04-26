@@ -28,7 +28,7 @@ public class CreditAdviceController {
             @RequestParam(defaultValue = "paymentDate") String sortBy,
             @RequestParam(defaultValue = "desc") String sortDir,
             @RequestParam(required = false) String merchantName,
-            @RequestParam(required = false) String accountNo,
+            @RequestParam(required = false) String accountId,
             @RequestParam(required = false) String dateFrom,
             @RequestParam(required = false) String dateTo
     ) {
@@ -39,7 +39,7 @@ public class CreditAdviceController {
             if (restrictToMerchantId == null) return Page.empty();
         }
         return creditAdviceService.getCreditAdvicesPage(
-                restrictToMerchantId, merchantName, accountNo, dateFrom, dateTo,
+                restrictToMerchantId, merchantName, accountId, dateFrom, dateTo,
                 page, size, sortBy, sortDir);
     }
 

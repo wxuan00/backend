@@ -193,8 +193,7 @@ public class DataSeeder implements CommandLineRunner {
                 RolePermission rp = new RolePermission();
                 rp.setRoleId(role.getRoleId());
                 rp.setPermissionId(p.getPermissionId());
-                rp.setGeneratedBy("SYSTEM");
-                rp.setGeneratedAt(LocalDateTime.now());
+                rp.setCreatedBy("SYSTEM");
                 rp.setLastModifiedBy("SYSTEM");
                 rp.setLastModifiedAt(LocalDateTime.now());
                 rolePermissionRepository.save(rp);
@@ -257,8 +256,7 @@ public class DataSeeder implements CommandLineRunner {
             UserRole ur = new UserRole();
             ur.setUserId(saved.getUserId());
             ur.setRoleId(role.getRoleId());
-            ur.setGeneratedBy("SYSTEM");
-            ur.setGeneratedAt(LocalDateTime.now());
+            ur.setCreatedBy("SYSTEM");
             ur.setLastModifiedBy("SYSTEM");
             ur.setLastModifiedAt(LocalDateTime.now());
             userRoleRepository.save(ur);
@@ -315,7 +313,7 @@ public class DataSeeder implements CommandLineRunner {
 
         // Extra payment channels and currencies for realism
         String[] extraChannels = {"CARD", "ONLINE", "E_WALLET", "QR_PAY", "BANK_TRANSFER"};
-        String[] currencies = {"MYR", "MYR", "MYR", "MYR", "USD", "SGD"};
+        String[] currencies = {"MYR"};
 
         List<Transaction> allTransactions = new ArrayList<>();
         int refSeq = 500000;    // unique refNo counter

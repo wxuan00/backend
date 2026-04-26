@@ -22,14 +22,14 @@ public class FileGeneratorService {
     private static final DateTimeFormatter DT_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     // ── PDF helpers ────────────────────────────────────────────────────────────
-    private static final Color HEADER_BG  = new Color(30, 64, 175);   // blue-800
-    private static final Color ALT_ROW_BG = new Color(239, 246, 255); // blue-50
-    private static final Font  TITLE_FONT = new Font(Font.HELVETICA, 16, Font.BOLD,   Color.WHITE);
-    private static final Font  HEAD_FONT  = new Font(Font.HELVETICA, 9,  Font.BOLD,   Color.WHITE);
-    private static final Font  BODY_FONT  = new Font(Font.HELVETICA, 8,  Font.NORMAL, Color.BLACK);
-    private static final Font  META_FONT  = new Font(Font.HELVETICA, 9,  Font.NORMAL, new Color(75, 85, 99));
-    private static final Font  KPI_LABEL  = new Font(Font.HELVETICA, 9,  Font.BOLD,   new Color(55, 65, 81));
-    private static final Font  KPI_VALUE  = new Font(Font.HELVETICA, 11, Font.BOLD,   new Color(30, 64, 175));
+    private final Color HEADER_BG  = new Color(30, 64, 175);   // blue-800
+    private final Color ALT_ROW_BG = new Color(239, 246, 255); // blue-50
+    private final Font  TITLE_FONT = new Font(Font.HELVETICA, 16, Font.BOLD,   Color.WHITE);
+    private final Font  HEAD_FONT  = new Font(Font.HELVETICA, 9,  Font.BOLD,   Color.WHITE);
+    private final Font  BODY_FONT  = new Font(Font.HELVETICA, 8,  Font.NORMAL, Color.BLACK);
+    private final Font  META_FONT  = new Font(Font.HELVETICA, 9,  Font.NORMAL, new Color(75, 85, 99));
+    private final Font  KPI_LABEL  = new Font(Font.HELVETICA, 9,  Font.BOLD,   new Color(55, 65, 81));
+    private final Font  KPI_VALUE  = new Font(Font.HELVETICA, 11, Font.BOLD,   new Color(30, 64, 175));
 
     private Document createDocument(ByteArrayOutputStream out, String title, String subtitle) throws Exception {
         Document doc = new Document(PageSize.A4.rotate(), 30, 30, 40, 30);

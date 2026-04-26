@@ -39,7 +39,7 @@ public class CreditAdviceService {
     public Page<CreditAdvice> getCreditAdvicesPage(
             Long restrictToMerchantId,
             String merchantName,
-            String accountNo,
+            String accountId,
             String dateFrom,
             String dateTo,
             int page,
@@ -77,8 +77,8 @@ public class CreditAdviceService {
                 var mj = isCountQuery ? root.join("merchant", jakarta.persistence.criteria.JoinType.LEFT) : merchantJoin;
                 predicates.add(cb.like(cb.lower(mj.get("merchantName")), "%" + merchantName.toLowerCase().trim() + "%"));
             }
-            if (accountNo != null && !accountNo.isBlank()) {
-                predicates.add(cb.like(cb.lower(root.get("accountNo")), "%" + accountNo.toLowerCase().trim() + "%"));
+            if (accountId != null && !accountId.isBlank()) {
+                predicates.add(cb.like(cb.lower(root.get("accountId")), "%" + accountId.toLowerCase().trim() + "%"));
             }
             if (dateFrom != null && !dateFrom.isBlank()) {
                 LocalDateTime from = LocalDate.parse(dateFrom).atStartOfDay();
