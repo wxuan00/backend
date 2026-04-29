@@ -62,7 +62,7 @@ class RoleServiceTest {
     @Test
     @DisplayName("getAllRoles: returns all roles from repository")
     void getAllRoles_returnsAll() {
-        when(roleRepository.findAll()).thenReturn(List.of(merchantRole, adminRole, customRole));
+        when(roleRepository.findByDeletedAtIsNull()).thenReturn(List.of(merchantRole, adminRole, customRole));
         List<Role> result = roleService.getAllRoles();
         assertThat(result).hasSize(3);
     }
@@ -70,7 +70,7 @@ class RoleServiceTest {
     @Test
     @DisplayName("getAllRoles: returns empty list when no roles")
     void getAllRoles_empty() {
-        when(roleRepository.findAll()).thenReturn(List.of());
+        when(roleRepository.findByDeletedAtIsNull()).thenReturn(List.of());
         assertThat(roleService.getAllRoles()).isEmpty();
     }
 
@@ -98,7 +98,7 @@ class RoleServiceTest {
     @Test
     @DisplayName("createRole: saves and returns new role")
     void createRole_success() {
-        when(roleRepository.findByRoleName("CUSTOM_ROLE")).thenReturn(Optional.empty());
+        when(roleRepository.findByRoleNameAndDeletedAtIsNull("CUSTOM_ROLE")).thenReturn(Optional.empty());
         when(roleRepository.save(any())).thenReturn(customRole);
 
         Role result = roleService.createRole(customRole);
@@ -110,7 +110,7 @@ class RoleServiceTest {
     @Test
     @DisplayName("createRole: throws when role name already exists")
     void createRole_duplicateName_throws() {
-        when(roleRepository.findByRoleName("CUSTOM_ROLE")).thenReturn(Optional.of(customRole));
+        when(roleRepository.findByRoleNameAndDeletedAtIsNull("CUSTOM_ROLE")).thenReturn(Optional.of(customRole));
         assertThatThrownBy(() -> roleService.createRole(customRole))
                 .isInstanceOf(RuntimeException.class)
                 .hasMessageContaining("already exists");
@@ -152,10 +152,10 @@ class RoleServiceTest {
         when(roleRepository.findById(3L)).thenReturn(Optional.of(customRole));
         doNothing().when(rolePermissionRepository).deleteByRoleId(3L);
         doNothing().when(userRoleRepository).deleteByRoleId(3L);
-        doNothing().when(roleRepository).deleteById(3L);
+        when(roleRepository.save(any(Role.class))).thenAnswer(i -> i.getArgument(0));
 
         assertThatNoException().isThrownBy(() -> roleService.deleteRole(3L));
-        verify(roleRepository).deleteById(3L);
+        verify(roleRepository).save(argThat(r -> r.getDeletedAt() != null));
     }
 
     @Test

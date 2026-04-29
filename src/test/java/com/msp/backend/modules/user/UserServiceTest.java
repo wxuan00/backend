@@ -2,6 +2,8 @@ package com.msp.backend.modules.user;
 
 import com.msp.backend.modules.role.Role;
 import com.msp.backend.modules.role.RoleRepository;
+import com.msp.backend.modules.role.RolePermissionRepository;
+import com.msp.backend.modules.merchant.MerchantUserMappingRepository;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -28,6 +30,8 @@ class UserServiceTest {
     @Mock private UserRepository userRepository;
     @Mock private UserRoleRepository userRoleRepository;
     @Mock private RoleRepository roleRepository;
+    @Mock private RolePermissionRepository rolePermissionRepository;
+    @Mock private MerchantUserMappingRepository merchantUserMappingRepository;
     @Mock private PasswordEncoder passwordEncoder;
     @Mock private EntityManager entityManager;
 
@@ -139,7 +143,7 @@ class UserServiceTest {
             u.setUserId(99L);
             return u;
         });
-        when(roleRepository.findByRoleName("MERCHANT")).thenReturn(Optional.of(merchantRole));
+        when(roleRepository.findByRoleNameAndDeletedAtIsNull("MERCHANT")).thenReturn(Optional.of(merchantRole));
         when(userRoleRepository.save(any(UserRole.class))).thenReturn(sampleUserRole);
 
         User result = userService.createUser(input);
@@ -194,7 +198,7 @@ class UserServiceTest {
             u.setUserId(88L);
             return u;
         });
-        when(roleRepository.findByRoleName("MERCHANT")).thenReturn(Optional.of(merchantRole));
+        when(roleRepository.findByRoleNameAndDeletedAtIsNull("MERCHANT")).thenReturn(Optional.of(merchantRole));
         when(userRoleRepository.save(any(UserRole.class))).thenReturn(sampleUserRole);
 
         User result = userService.createUser(input);

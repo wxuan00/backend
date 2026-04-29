@@ -67,11 +67,13 @@ public class DataSeeder implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
-        if (userRepository.count() > 0) {
-            log.info("Database already contains data. Skipping seeding.");
-            return;
+        if (userRepository.count() == 0) {
+            seedAll();
+        } else {
+            log.info("Database already contains data. Skipping initial seeding.");
         }
-        seedAll();
+        // Seed recent data for Apr 26 – May 6 2026 (runs once, guarded by sentinel)
+        seedRecentData();
     }
 
     public void reseed() {
@@ -726,4 +728,256 @@ public class DataSeeder implements CommandLineRunner {
         }
         log.info("Created {} analytics records", count);
     }
+
+    // ══════════════════════════════════════════════════════════════════
+    // Delete all records with dates in Apr 26 – May 6, 2026
+    // ══════════════════════════════════════════════════════════════════
+
+    private void seedRecentData() {
+        // Guard: only seed once
+        if (!analyticsRepository.findByDataNameOrderByGeneratedAtDesc("RECENT_SEED_DONE").isEmpty()) {
+            log.info("Recent data (Apr 26 – May 6 2026) already seeded. Skipping.");
+            return;
+        }
+
+        List<Merchant> merchants = merchantRepository.findAll();
+        if (merchants.isEmpty()) {
+            log.warn("No merchants found. Skipping recent data seed.");
+            return;
+        }
+
+        LocalDateTime rangeStart = LocalDateTime.of(2026, 4, 26, 0, 0);
+        int totalDays = 11; // Apr 26–30 + May 1–6
+
+        String[] channels = {"CARD", "ONLINE", "E_WALLET", "QR_PAY", "BANK_TRANSFER"};
+        String[] descs = {
+            "POS PURCHASE", "ONLINE ORDER", "SUBSCRIPTION RENEWAL",
+            "RETAIL PAYMENT", "FOOD DELIVERY", "TRANSPORT FARE",
+            "UTILITY BILL", "GROCERY PURCHASE", "DIGITAL GOODS",
+            "SERVICE FEE", "MEMBERSHIP FEE", "INSURANCE PREMIUM"
+        };
+        String currency = "MYR";
+
+        // Use high starting offsets to avoid collisions with existing records
+        int refSeq       = 9_000_000;
+        int refundRefSeq = 900_000;
+        int settlSeq     = 900_000;
+        int caSeq        = 900_000;
+
+        List<Transaction> allNewTxns = new ArrayList<>();
+
+        // ── 1. Generate 20-200 transactions per day ──────────────────────────
+        for (int day = 0; day < totalDays; day++) {
+            LocalDateTime dayStart = rangeStart.plusDays(day);
+            int txnCount = 20 + random.nextInt(181); // 20–200
+
+            for (int t = 0; t < txnCount; t++) {
+                Merchant merchant = merchants.get(random.nextInt(merchants.size()));
+
+                Transaction tx = new Transaction();
+                tx.setMerchantId(merchant.getMerchantId());
+                tx.setRefNo("R" + (refSeq++));
+                tx.setCardNo(String.format("4%03d%04d%04d%04d",
+                        random.nextInt(1000), random.nextInt(10000),
+                        random.nextInt(10000), random.nextInt(10000)));
+                tx.setTxnDescription(descs[random.nextInt(descs.length)]);
+
+                BigDecimal amount = BigDecimal.valueOf(10 + random.nextDouble() * 990)
+                        .setScale(2, RoundingMode.HALF_UP);
+                tx.setAmount(amount);
+                tx.setDiscountAmount(BigDecimal.ZERO);
+                tx.setNettAmount(amount);
+                tx.setCurrency(currency);
+                tx.setPaymentChannel(channels[random.nextInt(channels.length)]);
+
+                // Status distribution:
+                //   75% APPROVED | 8% DECLINED | 9% REFUNDED | 8% REFUND_REQUESTED
+                double roll = random.nextDouble();
+                String status;
+                if      (roll < 0.75) status = "APPROVED";
+                else if (roll < 0.83) status = "DECLINED";
+                else if (roll < 0.92) status = "REFUNDED";
+                else                  status = "REFUND_REQUESTED";
+                tx.setStatus(status);
+
+                int hour   = 7 + random.nextInt(14);
+                int minute = random.nextInt(60);
+                int second = random.nextInt(60);
+                LocalDateTime txnDate = dayStart.withHour(hour).withMinute(minute).withSecond(second);
+                tx.setTxnDate(txnDate);
+
+                if ("APPROVED".equals(status) || "REFUNDED".equals(status)) {
+                    tx.setPostedDate(txnDate.plusDays(1 + random.nextInt(2)));
+                }
+
+                allNewTxns.add(transactionRepository.save(tx));
+            }
+        }
+        log.info("Seeded {} transactions for Apr 26 – May 6 2026", allNewTxns.size());
+
+        // ── 2. Create refunds ─────────────────────────────────────────────────
+        // REFUNDED transaction       → refund status APPROVED
+        // REFUND_REQUESTED transaction → refund status PENDING
+        // CANCELLED refund           → transaction stays APPROVED (no status change)
+        int refundCount = 0;
+
+        for (Transaction tx : allNewTxns) {
+            if ("REFUNDED".equals(tx.getStatus())) {
+                Refund r = buildRefund(tx, "APPROVED", refundRefSeq++);
+                r.setPostedDate(r.getSubmissionDate().plusDays(1 + random.nextInt(3)));
+                refundRepository.save(r);
+                refundCount++;
+            } else if ("REFUND_REQUESTED".equals(tx.getStatus())) {
+                refundRepository.save(buildRefund(tx, "PENDING", refundRefSeq++));
+                refundCount++;
+            }
+        }
+
+        // ~5% of APPROVED transactions also have a CANCELLED refund
+        List<Transaction> approvedTxns = allNewTxns.stream()
+                .filter(tx -> "APPROVED".equals(tx.getStatus()))
+                .toList();
+        int cancelledCount = Math.max(1, approvedTxns.size() / 20);
+        for (int i = 0; i < cancelledCount; i++) {
+            Transaction tx = approvedTxns.get(random.nextInt(approvedTxns.size()));
+            refundRepository.save(buildRefund(tx, "CANCELLED", refundRefSeq++));
+            refundCount++;
+        }
+        log.info("Seeded {} refunds", refundCount);
+
+        // ── 3. Credit advices + settlements for APPROVED transactions only ────
+        Map<Long, List<Transaction>> byMerchant = new java.util.LinkedHashMap<>();
+        for (Transaction tx : approvedTxns) {
+            byMerchant.computeIfAbsent(tx.getMerchantId(), k -> new ArrayList<>()).add(tx);
+        }
+
+        int caCount = 0, settlCount = 0;
+
+        for (Map.Entry<Long, List<Transaction>> entry : byMerchant.entrySet()) {
+            Long merchantId = entry.getKey();
+            List<Transaction> mTxns = new ArrayList<>(entry.getValue());
+            mTxns.sort((a, b) -> a.getTxnDate().compareTo(b.getTxnDate()));
+
+            // Batch transactions into ~2-day windows
+            List<List<Transaction>> batches = new ArrayList<>();
+            List<Transaction> currentBatch = new ArrayList<>();
+            LocalDateTime batchCutoff = mTxns.get(0).getTxnDate().plusDays(2);
+
+            for (Transaction tx : mTxns) {
+                if (tx.getTxnDate().isAfter(batchCutoff)) {
+                    if (!currentBatch.isEmpty()) {
+                        batches.add(currentBatch);
+                        currentBatch = new ArrayList<>();
+                    }
+                    batchCutoff = tx.getTxnDate().plusDays(2);
+                }
+                currentBatch.add(tx);
+            }
+            if (!currentBatch.isEmpty()) batches.add(currentBatch);
+
+            Merchant merchant = merchants.stream()
+                    .filter(m -> m.getMerchantId().equals(merchantId))
+                    .findFirst().orElse(merchants.get(0));
+            String nameSlug = merchant.getMerchantName()
+                    .replaceAll("\\s+", "").toUpperCase();
+            String slug = nameSlug.substring(0, Math.min(nameSlug.length(), 6));
+
+            for (List<Transaction> batch : batches) {
+                LocalDateTime latestTxn = batch.stream()
+                        .map(Transaction::getTxnDate)
+                        .max(LocalDateTime::compareTo).orElse(rangeStart);
+                LocalDateTime paymentDate = latestTxn
+                        .plusDays(3 + random.nextInt(3))
+                        .withHour(10 + random.nextInt(4))
+                        .withMinute(0).withSecond(0);
+
+                CreditAdvice ca = new CreditAdvice();
+                ca.setMerchantId(merchantId);
+                ca.setAccountNo("ACC-" + slug + "-" + (caSeq + 1));
+                ca.setAccountId("AID" + String.format("%06d", caSeq + 1));
+                ca.setCurrency(currency);
+                ca.setAmount(BigDecimal.ZERO);
+                ca.setPaymentDate(paymentDate);
+                CreditAdvice savedCA = creditAdviceRepository.save(ca);
+                caSeq++;
+                caCount++;
+
+                // Split large batches into 2 settlements, smaller into 1
+                int numSettlements = batch.size() > 10 ? 2 : 1;
+                int splitPoint     = batch.size() / numSettlements;
+                BigDecimal totalCAAmount = BigDecimal.ZERO;
+
+                for (int s = 0; s < numSettlements; s++) {
+                    int from = s * splitPoint;
+                    int toIdx = (s == numSettlements - 1) ? batch.size() : from + splitPoint;
+                    List<Transaction> sTxns = batch.subList(from, toIdx);
+
+                    BigDecimal settlAmt = sTxns.stream()
+                            .map(tx -> tx.getNettAmount() != null ? tx.getNettAmount() : tx.getAmount())
+                            .reduce(BigDecimal.ZERO, BigDecimal::add)
+                            .setScale(2, RoundingMode.HALF_UP);
+
+                    Settlement settlement = new Settlement();
+                    settlement.setCreditAdviceId(savedCA.getCreditAdviceId());
+                    settlement.setSettlementNo("STL" + String.format("%08d", settlSeq++));
+                    settlement.setSettlementType(random.nextBoolean() ? "NORMAL" : "EXPRESS");
+                    settlement.setCurrency(currency);
+                    settlement.setSettlementAmount(settlAmt);
+                    settlement.setPaymentAmount(settlAmt
+                            .multiply(BigDecimal.valueOf(0.975))
+                            .setScale(2, RoundingMode.HALF_UP));
+                    settlement.setSettlementDate(paymentDate.minusDays(1 + random.nextInt(2)));
+                    Settlement savedSettl = settlementRepository.save(settlement);
+                    settlCount++;
+                    totalCAAmount = totalCAAmount.add(settlAmt);
+
+                    for (Transaction tx : sTxns) {
+                        tx.setSettlementId(savedSettl.getSettlementId());
+                        transactionRepository.save(tx);
+                    }
+                }
+
+                savedCA.setAmount(totalCAAmount);
+                creditAdviceRepository.save(savedCA);
+            }
+        }
+        log.info("Seeded {} credit advices, {} settlements", caCount, settlCount);
+
+        // ── 4. Persist sentinel so we never double-seed ───────────────────────
+        Analytics sentinel = new Analytics();
+        sentinel.setMerchantId(merchants.get(0).getMerchantId());
+        sentinel.setDataName("RECENT_SEED_DONE");
+        sentinel.setDataValue("2026-04-26-to-05-06-v3");
+        sentinel.setGeneratedAt(LocalDateTime.now());
+        analyticsRepository.save(sentinel);
+
+        log.info("=== Recent data seeding complete (Apr 26 – May 6 2026) ===");
+    }
+
+    private Refund buildRefund(Transaction tx, String status, int refSeq) {
+        Refund r = new Refund();
+        r.setTransactionId(tx.getTransactionId());
+        r.setMerchantId(tx.getMerchantId());
+        r.setCardNo(tx.getCardNo());
+        r.setCurrency(tx.getCurrency());
+        r.setAmount(tx.getAmount());
+        r.setTransactionDate(tx.getTxnDate());
+        r.setSubmissionDate(tx.getTxnDate().plusDays(1 + random.nextInt(5)));
+
+        boolean isFull = random.nextBoolean();
+        r.setRefundType(isFull ? "FULL" : "PARTIAL");
+        if (isFull) {
+            r.setRefundAmount(tx.getAmount());
+        } else {
+            int pct = 20 + random.nextInt(61); // 20–80 %
+            r.setRefundAmount(tx.getAmount()
+                    .multiply(BigDecimal.valueOf(pct))
+                    .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP));
+        }
+
+        r.setRefundRefNo("RFN" + String.format("%08d", refSeq));
+        r.setStatus(status);
+        return r;
+    }
+
 }
